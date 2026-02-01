@@ -3,7 +3,6 @@
 [![SFCC](https://img.shields.io/badge/SFCC-B2C_Commerce-orange)](https://www.salesforce.com/products/commerce-cloud/overview/)
 [![Salesforce](https://img.shields.io/badge/Salesforce-Knowledge-blue)](https://www.salesforce.com/products/service-cloud/features/knowledge-management/)
 [![API](https://img.shields.io/badge/API-v58.0-green)](https://developer.salesforce.com/docs/atlas.en-us.api_rest.meta/api_rest/)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 A powerful, production-ready Salesforce Commerce Cloud (SFCC) B2C Commerce cartridge that seamlessly synchronizes Content Assets to Salesforce Knowledge Articles with **incremental sync**, **automatic field creation**, **versioning support**, and **comprehensive debugging capabilities**.
 
@@ -13,8 +12,8 @@ A powerful, production-ready Salesforce Commerce Cloud (SFCC) B2C Commerce cartr
 
 [![GitHub](https://img.shields.io/badge/GitHub-neeraj--agentic--lab-181717?logo=github&style=flat-square)](https://github.com/neeraj-agentic-lab)
 [![LinkedIn](https://img.shields.io/badge/LinkedIn-n--yadav-0077B5?logo=linkedin&style=flat-square)](https://www.linkedin.com/in/n-yadav/)
-[![Issues](https://img.shields.io/github/issues/neeraj-agentic-lab/int_salesforce_knowledge?style=flat-square)](https://github.com/neeraj-agentic-lab/int_salesforce_knowledge/issues)
-[![Pull Requests](https://img.shields.io/github/issues-pr/neeraj-agentic-lab/int_salesforce_knowledge?style=flat-square)](https://github.com/neeraj-agentic-lab/int_salesforce_knowledge/pulls)
+[![Issues](https://img.shields.io/github/issues/neeraj-agentic-lab/SFCC-Knowledge-Connector?style=flat-square)](https://github.com/neeraj-agentic-lab/SFCC-Knowledge-Connector/issues)
+[![Pull Requests](https://img.shields.io/github/issues-pr/neeraj-agentic-lab/SFCC-Knowledge-Connector?style=flat-square)](https://github.com/neeraj-agentic-lab/SFCC-Knowledge-Connector/pulls)
 
 </div>
 
@@ -45,7 +44,6 @@ A powerful, production-ready Salesforce Commerce Cloud (SFCC) B2C Commerce cartr
 - [FAQ](#faq)
 - [Testing](#testing)
 - [Contributing](#contributing)
-- [License](#license)
 
 ---
 
@@ -1598,26 +1596,11 @@ Contributions are welcome! I appreciate your help in making this integration bet
 
 ### 📢 Ways to Contribute
 
-1. **🐛 Report Bugs**: [Open an issue](https://github.com/neeraj-agentic-lab/int_salesforce_knowledge/issues/new?labels=bug)
-2. **💡 Request Features**: [Open an issue](https://github.com/neeraj-agentic-lab/int_salesforce_knowledge/issues/new?labels=enhancement)
+1. **🐛 Report Bugs**: [Open an issue](https://github.com/neeraj-agentic-lab/SFCC-Knowledge-Connector/issues/new?labels=bug)
+2. **💡 Request Features**: [Open an issue](https://github.com/neeraj-agentic-lab/SFCC-Knowledge-Connector/issues/new?labels=enhancement)
 3. **📖 Improve Documentation**: Submit PRs for documentation improvements
 4. **💻 Submit Code**: Fork, develop, and submit pull requests
 5. **⭐ Star the Repo**: Show your support!
-
-### 📋 Reporting Issues
-
-When reporting issues, please include:
-
-1. **Environment Details**:
-   - SFCC version
-   - Salesforce org type (Sandbox/Production)
-   - Integration version
-2. **Detailed Description**: Clear description of the issue
-3. **Error Messages**: Include complete error logs
-4. **Steps to Reproduce**: Numbered steps to recreate the issue
-5. **Expected vs Actual Behavior**: What you expected vs what happened
-
-**Template**: Use the [issue template](https://github.com/neeraj-agentic-lab/int_salesforce_knowledge/issues/new) on GitHub
 
 ### 🔀 Pull Requests
 
@@ -1646,14 +1629,8 @@ Follow these steps for submitting PRs:
 ### 💬 Questions or Discussions?
 
 - 📧 **LinkedIn**: [Connect with me](https://www.linkedin.com/in/n-yadav/)
-- 💬 **GitHub Discussions**: [Start a discussion](https://github.com/neeraj-agentic-lab/int_salesforce_knowledge/discussions)
-- 🐙 **GitHub Issues**: [Browse or create issues](https://github.com/neeraj-agentic-lab/int_salesforce_knowledge/issues)
-
-### 🙏 Contributors
-
-Thank you to all contributors who help improve this project!
-
-[![Contributors](https://img.shields.io/github/contributors/neeraj-agentic-lab/int_salesforce_knowledge)](https://github.com/neeraj-agentic-lab/int_salesforce_knowledge/graphs/contributors)
+- 💬 **GitHub Discussions**: [Start a discussion](https://github.com/neeraj-agentic-lab/SFCC-Knowledge-Connector/discussions)
+- 🐙 **GitHub Issues**: [Browse or create issues](https://github.com/neeraj-agentic-lab/SFCC-Knowledge-Connector/issues)
 
 ---
 
@@ -1661,103 +1638,14 @@ Thank you to all contributors who help improve this project!
 
 **Neeraj Yadav**
 
-Software Engineer specializing in Salesforce Commerce Cloud (SFCC) integrations and enterprise solutions.
-
 ### Connect with me:
 
-- 🐙 **GitHub**: [neeraj-agentic-lab](https://github.com/neeraj-agentic-lab)
-- 💼 **LinkedIn**: [n-yadav](https://www.linkedin.com/in/n-yadav/)
-- 📧 **Email**: Available via LinkedIn
-
-### Contributions
-
-I'm always open to:
-- 🐛 Bug reports and issues
-- 💡 Feature requests and suggestions
-- 🤝 Pull requests and contributions
-- 💬 Questions and discussions
-
-Feel free to reach out via GitHub or LinkedIn!
-
----
-
-## Acknowledgments
-
-- Salesforce Commerce Cloud (SFCC) Documentation
-- Salesforce Knowledge API Documentation
-- Salesforce Tooling API Documentation
-- Open Source Community
-
----
-
-## 📊 Project Statistics
-
-| Metric | Value |
-|--------|-------|
-| **Lines of Code** | ~3000+ |
-| **Supported Field Types** | 8 (Text, LongTextArea, Number, etc.) |
-| **API Integrations** | 3 (OAuth, Knowledge API, Tooling API) |
-| **Performance Gain** | Up to 95% faster with delta sync |
-| **API Call Reduction** | 99% reduction in delta mode |
-
----
-
-## 🗺️ Roadmap
-
-### Planned Features
-- [ ] Multi-language support with locale-based sync
-- [ ] Webhook-based real-time sync
-- [ ] Support for Knowledge article attachments
-- [ ] Custom field type validators
-- [ ] Advanced data category mapping
-- [ ] Dry-run mode for testing field mappings
-- [ ] Email notifications for sync failures
-- [ ] Sync history dashboard
-
-### Feature Requests
-Have a feature request? [Open an issue](https://github.com/neeraj-agentic-lab/int_salesforce_knowledge/issues) with the label `enhancement`.
-
----
-
-## 📝 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
----
-
-## 🙏 Acknowledgments
-
-- **Salesforce Commerce Cloud (SFCC)** - For the robust B2C Commerce platform
-- **Salesforce Knowledge** - For the comprehensive knowledge management capabilities
-- **Salesforce APIs** - For the extensive REST and Tooling API support
-- **Open Source Community** - For inspiration and best practices
-
----
-
-## 📞 Support
-
-### Documentation
-- [SFCC Documentation](https://documentation.b2c.commercecloud.salesforce.com/)
-- [Salesforce Knowledge API](https://developer.salesforce.com/docs/atlas.en-us.knowledge_dev.meta/knowledge_dev/)
-- [Salesforce Tooling API](https://developer.salesforce.com/docs/atlas.en-us.api_tooling.meta/api_tooling/)
-
-### Community
-- SFCC Developer Forums
-- Salesforce Stack Exchange
-- Trailblazer Community
-
-### Issues & Support
-Found a bug? [Report it here](https://github.com/neeraj-agentic-lab/int_salesforce_knowledge/issues)
-
-For questions and discussions:
-- 💬 [GitHub Discussions](https://github.com/neeraj-agentic-lab/int_salesforce_knowledge/discussions)
-- 📧 Connect via [LinkedIn](https://www.linkedin.com/in/n-yadav/)
-
----
+- **GitHub**: [neeraj-agentic-lab](https://github.com/neeraj-agentic-lab)
+- **LinkedIn**: [n-yadav](https://www.linkedin.com/in/n-yadav/)
 
 ## 📈 Version History
 
-### Version 2.0.0 (2024)
+### Version 2.0.0
 - ✨ **NEW**: Incremental/delta sync mode (default)
 - ✨ **NEW**: Sync metadata tracking on Content Assets
 - ✨ **NEW**: Request-scoped caching for improved performance
@@ -1766,7 +1654,7 @@ For questions and discussions:
 - 🚀 Performance improvements (up to 95% faster)
 - 📖 Comprehensive README documentation
 
-### Version 1.0.0 (2024)
+### Version 1.0.0
 - 🎉 Initial release
 - ✨ Full sync mode
 - ✨ Automatic field creation via Tooling API
@@ -1786,8 +1674,8 @@ For questions and discussions:
 
 ⭐ Star this repo if you find it useful!
 
-[![GitHub stars](https://img.shields.io/github/stars/neeraj-agentic-lab/int_salesforce_knowledge?style=social)](https://github.com/neeraj-agentic-lab/int_salesforce_knowledge)
-[![GitHub forks](https://img.shields.io/github/forks/neeraj-agentic-lab/int_salesforce_knowledge?style=social)](https://github.com/neeraj-agentic-lab/int_salesforce_knowledge/fork)
+[![GitHub stars](https://img.shields.io/github/stars/neeraj-agentic-lab/SFCC-Knowledge-Connector?style=social)](https://github.com/neeraj-agentic-lab/SFCC-Knowledge-Connector)
+[![GitHub forks](https://img.shields.io/github/forks/neeraj-agentic-lab/SFCC-Knowledge-Connector?style=social)](https://github.com/neeraj-agentic-lab/SFCC-Knowledge-Connector/fork)
 
 </div>
 
@@ -1796,5 +1684,3 @@ For questions and discussions:
 **Version**: 2.0.0
 **Last Updated**: February 2024
 **Compatibility**: SFCC B2C 21.x+, Salesforce API v58.0+
-**Status**: Production Ready ✅
-**Maintained by**: [Neeraj Yadav](https://github.com/neeraj-agentic-lab)
