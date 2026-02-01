@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<metadata xmlns="http://www.demandware.com/xml/impex/metadata/2006-10-31">
+    <!--
+        Custom attributes for Content Assets to support Salesforce Knowledge sync
+
+        These attributes track sync status and enable incremental delta sync:
+        - sfKnowledgeArticleId: Master Knowledge Article ID from Salesforce
+        - sfKnowledgeVersionId: Current version ID from Salesforce
+        - sfLastSyncDateTime: Timestamp of last successful sync
+
+        To install:
+        1. Upload this file via Business Manager > Administration > Site Development > Import & Export
+        2. Import metadata under the "Meta Data" tab
+        3. The attributes will be available on all Content Assets
+    -->
+
+    <type-extension type-id="Content">
+        <custom-attribute-definitions>
+            <!-- Salesforce Knowledge Article ID (Master ID) -->
+            <attribute-definition attribute-id="sfKnowledgeArticleId">
+                <display-name xml:lang="x-default">SF Knowledge Article ID</display-name>
+                <description xml:lang="x-default">Master Salesforce Knowledge Article ID (KnowledgeArticleId) - stable across versions</description>
+                <type>string</type>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+                <field-length>18</field-length>
+            </attribute-definition>
+
+            <!-- Salesforce Knowledge Version ID -->
+            <attribute-definition attribute-id="sfKnowledgeVersionId">
+                <display-name xml:lang="x-default">SF Knowledge Version ID</display-name>
+                <description xml:lang="x-default">Current Salesforce Knowledge Article Version ID (Id) - changes with each version</description>
+                <type>string</type>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+                <field-length>18</field-length>
+            </attribute-definition>
+
+            <!-- Last Sync Date/Time -->
+            <attribute-definition attribute-id="sfLastSyncDateTime">
+                <display-name xml:lang="x-default">SF Last Sync Date/Time</display-name>
+                <description xml:lang="x-default">Timestamp of last successful sync to Salesforce Knowledge</description>
+                <type>datetime</type>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+            </attribute-definition>
+        </custom-attribute-definitions>
+
+        <group-definitions>
+            <attribute-group group-id="SalesforceKnowledge">
+                <display-name xml:lang="x-default">Salesforce Knowledge Sync</display-name>
+                <attribute attribute-id="sfKnowledgeArticleId"/>
+                <attribute attribute-id="sfKnowledgeVersionId"/>
+                <attribute attribute-id="sfLastSyncDateTime"/>
+            </attribute-group>
+        </group-definitions>
+    </type-extension>
+</metadata>

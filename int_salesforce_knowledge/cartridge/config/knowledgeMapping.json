@@ -1,0 +1,140 @@
+{
+  "_comment": "Advanced Mapping Configuration for Salesforce Knowledge Integration",
+  "_description": "This file provides advanced mapping configurations that can be used for complex transformations. Currently optional - most mappings are handled via site preferences.",
+
+  "contentTypeMapping": {
+    "_description": "Maps B2C content types or folder IDs to Salesforce Knowledge Article Types",
+    "faq": "FAQ__kav",
+    "product-guides": "Product_Guide__kav",
+    "articles": "Article__kav",
+    "how-to": "How_To__kav"
+  },
+
+  "categoryMapping": {
+    "_description": "Maps B2C content classification folders to Salesforce Data Categories",
+    "_format": "CategoryGroup:Category",
+    "electronics": "Products:Electronics",
+    "clothing": "Products:Clothing",
+    "home-garden": "Products:Home_and_Garden",
+    "support": "Support:General",
+    "faq": "Support:FAQ"
+  },
+
+  "languageMapping": {
+    "_description": "Maps B2C locale codes to Salesforce Knowledge language codes",
+    "en_US": "en_US",
+    "en_GB": "en_GB",
+    "fr_FR": "fr",
+    "de_DE": "de",
+    "es_ES": "es",
+    "it_IT": "it",
+    "ja_JP": "ja",
+    "zh_CN": "zh_CN"
+  },
+
+  "fieldTransformations": {
+    "_description": "Defines transformations to apply to specific fields during mapping",
+
+    "Body__c": {
+      "_description": "HTML body content transformations",
+      "stripHTML": false,
+      "maxLength": 32000,
+      "preserveFormatting": true,
+      "convertLineBreaks": false
+    },
+
+    "Summary": {
+      "_description": "Summary text transformations",
+      "stripHTML": true,
+      "maxLength": 1000,
+      "truncateWithEllipsis": true
+    },
+
+    "Title": {
+      "_description": "Title text transformations",
+      "maxLength": 255,
+      "capitalizeWords": false
+    }
+  },
+
+  "defaultValues": {
+    "_description": "Default values to use if B2C fields are empty",
+    "Title": "Untitled Article",
+    "ValidationStatus": "Draft",
+    "Language": "en_US",
+    "IsVisibleInPkb": false,
+    "IsVisibleInCsp": false,
+    "IsVisibleInPrm": false
+  },
+
+  "excludeFields": {
+    "_description": "List of B2C fields to exclude from export",
+    "fields": [
+      "template",
+      "UUID",
+      "createdBy",
+      "lastModifiedBy"
+    ]
+  },
+
+  "conditionalRules": {
+    "_description": "Rules for conditional field mapping based on content attributes",
+    "rules": [
+      {
+        "condition": "classificationFolder == 'faq'",
+        "then": {
+          "ArticleType": "FAQ__kav",
+          "DataCategory": "Support:FAQ"
+        }
+      },
+      {
+        "condition": "custom.contentType == 'product-guide'",
+        "then": {
+          "ArticleType": "Product_Guide__kav",
+          "IsVisibleInPkb": true
+        }
+      }
+    ]
+  },
+
+  "apiSettings": {
+    "_description": "Salesforce API-specific settings",
+    "apiVersion": "v58.0",
+    "retryAttempts": 3,
+    "retryDelay": 5000,
+    "batchSizeLimit": 500,
+    "rateLimitDelay": 100
+  },
+
+  "validationRules": {
+    "_description": "Validation rules to apply before exporting",
+    "required": [
+      "Title",
+      "External_ID__c"
+    ],
+    "minLengths": {
+      "Title": 1,
+      "Summary": 10
+    },
+    "maxLengths": {
+      "Title": 255,
+      "Summary": 1000,
+      "Body__c": 32000
+    }
+  },
+
+  "exportFilters": {
+    "_description": "Filters to determine which content should be exported",
+    "onlineOnly": true,
+    "excludeFolders": [
+      "internal",
+      "draft",
+      "archived"
+    ],
+    "includeCustomTypes": [
+      "article",
+      "faq",
+      "guide"
+    ]
+  }
+}
