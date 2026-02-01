@@ -68,6 +68,214 @@ This cartridge enables automated synchronization of B2C Commerce Content Assets 
 
 ---
 
+## 🎯 Supported Use Cases
+
+The following use cases represent **approved, scalable patterns** for using Salesforce Knowledge with B2C Commerce content synchronization.
+
+### 1. 🛍️ Pre-Purchase & Discovery Support
+**Purpose:** Improve conversion and reduce pre-sales inquiries
+
+**Knowledge Content Examples:**
+- Product FAQs (materials, care instructions, compatibility)
+- Size and fit guidance (non-personalized)
+- Warranty and guarantee explanations
+- Digital vs physical product behavior
+- Price matching and promotion eligibility rules
+
+**Business Outcome:** Higher conversion rates, fewer pre-purchase support cases
+
+---
+
+### 2. 💰 Pricing, Promotions & Cart Semantics
+**Purpose:** Reduce confusion during cart and checkout
+
+**Knowledge Content Examples:**
+- How promotions work and apply
+- Promotion stacking and exclusion rules
+- Why cart prices may change dynamically
+- Why items may be removed from cart automatically
+- Promo code troubleshooting guidance
+
+**Business Outcome:** Reduced cart abandonment, fewer checkout support cases
+
+---
+
+### 3. 💳 Checkout & Payment Policy Guidance
+**Purpose:** Explain checkout behavior without exposing sensitive payment data
+
+**Knowledge Content Examples:**
+- Supported payment methods by region
+- Authorization vs capture explanation
+- Common payment failure reasons (generic guidance)
+- Fraud review process overview
+- International taxes and duties explanation
+
+**Business Outcome:** Smoother checkout experience, reduced payment-related inquiries
+
+---
+
+### 4. 📦 Order Lifecycle & WISMO Support
+**Purpose:** Reduce "Where Is My Order?" (WISMO) inquiries
+
+**Knowledge Content Examples:**
+- Order status meanings (Placed, Processing, Shipped, Delivered)
+- Split shipment explanations
+- Multi-warehouse fulfillment logic
+- Preorder and backorder handling
+- Delivery delay scenarios
+
+**Key Principle:** Knowledge explains *what a status means*, not *what a specific order is doing*
+
+**Business Outcome:** 30-40% reduction in WISMO cases
+
+---
+
+### 5. 🚚 Shipping & Delivery Policies
+**Purpose:** Set accurate delivery expectations
+
+**Knowledge Content Examples:**
+- Shipping methods and service level agreements (SLAs)
+- Order cutoff times for same-day processing
+- Weekend and holiday handling policies
+- International shipping rules and restrictions
+- Carrier delay explanations
+- Lost or damaged shipment process
+
+**Business Outcome:** Reduced delivery expectation mismatches
+
+---
+
+### 6. 🔄 Returns, Refunds & Exchanges
+**Purpose:** Reduce cost and escalation in the highest-volume support area
+
+**Knowledge Content Examples:**
+- Return eligibility rules (time windows, condition requirements)
+- Exchange vs refund processes
+- Refund timing by payment method
+- Partial return handling
+- Gift and bundle return rules
+- Return shipping cost policies
+
+**Excluded:** Customer-specific refund amounts, payment identifiers
+
+**Business Outcome:** Self-service return handling, reduced agent workload
+
+---
+
+### 7. 💳 Payment Semantics (Policy-Only)
+**Purpose:** Explain payment behavior safely
+
+**Knowledge Content Examples:**
+- Supported payment instruments
+- Split payment rules and limitations
+- Gift card and store credit usage policies
+- Authorization release timelines
+- Pending vs completed transaction explanations
+
+**Business Outcome:** Payment transparency without security risk
+
+---
+
+### 8. 🔁 Subscription & Recurring Commerce
+**Purpose:** Support subscription-based business models
+
+**Knowledge Content Examples:**
+- Subscription billing cadence and cycles
+- Pause, skip, and cancel subscription rules
+- Renewal behavior and notifications
+- Failed payment retry policy
+- Subscription modification policies
+
+**Business Outcome:** Reduced subscription churn, improved self-service
+
+---
+
+### 9. 📧 Commerce Messaging Explanation
+**Purpose:** Support transactional and lifecycle messaging
+
+**Knowledge Content Examples:**
+- Order confirmation email timing and content
+- Multiple shipment notification logic
+- Back-in-stock notification behavior
+- Account security alert explanations
+- Marketing vs transactional email distinction
+
+**Business Outcome:** Reduced "why did I get this email?" inquiries
+
+---
+
+### 10. 🤖 AI & Agent Assist Grounding
+**Purpose:** Enable safe AI usage without hallucination
+
+**Knowledge Usage:**
+- Grounding for Agentforce and Einstein Copilot responses
+- Suggested agent replies with approved phrasing
+- Legal-safe language for refunds and cancellations
+- Consistent policy enforcement across channels
+- AI-powered article recommendations
+
+**Key Benefit:** Knowledge acts as the **approved source of truth** for AI-generated explanations
+
+**Business Outcome:** Safe AI deployment, reduced AI hallucination risk
+
+---
+
+### 11. 👥 Agent Enablement (Internal Knowledge)
+**Purpose:** Reduce average handle time (AHT) and tribal knowledge dependency
+
+**Knowledge Content Examples:**
+- Commerce lifecycle flow explanations
+- OMS and Commerce Cloud interaction patterns
+- Manual exception handling procedures
+- Escalation criteria and workflows
+- Agent capability boundaries (what agents can/cannot promise)
+
+**Business Outcome:** Faster agent onboarding, consistent service quality
+
+---
+
+### 12. 🌐 Self-Service & Help Center
+**Purpose:** Case deflection and customer empowerment
+
+**Knowledge Content Examples:**
+- Order tracking instructions
+- Return initiation guides
+- Account and subscription management
+- Loyalty program rules and benefits
+- Password reset and account recovery
+
+**Business Outcome:** 20-30% case deflection rate
+
+---
+
+### 13. 🌍 Global & Localization Support
+**Purpose:** Enable multi-region commerce operations
+
+**Knowledge Content Examples:**
+- VAT / GST explanations by region
+- Duties and customs rules
+- Region-specific return policies
+- Market-specific shipping constraints
+- Currency and payment method variations
+
+**Business Outcome:** Consistent global customer experience
+
+---
+
+### 14. ⚖️ Governance & Compliance
+**Purpose:** Ensure legal and operational consistency
+
+**Knowledge Content Examples:**
+- Approved refund language and disclaimers
+- Delivery commitment disclaimers
+- Proof-of-purchase requirements
+- Versioned and time-bound policies
+- Regulatory compliance messaging
+
+**Business Outcome:** Reduced legal risk, audit-ready operations
+
+---
+
 ## ⭐ Key Highlights
 
 ### 🚄 Performance
