@@ -7,57 +7,32 @@
  * as Knowledge Articles. This script is called by the SFCC Job Framework.
  *
  * Job Parameters:
- * - ContentFolderID (optional): Specific folder to export (default: 'root' for all content)
- * - BatchSize (optional): Number of assets per batch (default: 50)
- * - ExportMode (optional): 'full' or 'delta' (default: delta)
- * - ArticleType (optional): Knowledge Article Type API Name (default: Knowledge__kav)
- * - FieldMapping (optional): JSON field mapping (default: standard mapping)
- * - DataCategory (optional): Salesforce Knowledge data category
- * - AutoCreateFields (optional): Automatically create missing custom fields (default: false)
- * - FieldMetadata (optional): JSON metadata for custom fields to create (default: {})
- * - PublishArticles (optional): Auto-publish articles after creation/update (default: false)
- * - EnableDebugLogging (optional): Enable detailed debug logging (default: false)
  * - ServiceID (optional): Salesforce service ID (default: salesforce.oauth)
+ * - SiteConfigurations (required): Multi-site configuration JSON with _defaults inheritance
  *
- * Configuration Examples:
- *
- * Example 1: Basic export with auto-create using defaults
- *   AutoCreateFields: true
- *   FieldMapping: {"Title":"name","Body__c":"custom.body","SFCC_External_ID__c":"ID"}
- *   FieldMetadata: {}
- *   Result: Creates Body__c and SFCC_External_ID__c as Text(255) fields
- *
- * Example 2: Export with custom field metadata
- *   AutoCreateFields: true
- *   FieldMapping: {"Title":"name","Body__c":"custom.body","SFCC_External_ID__c":"ID","View_Count__c":"custom.viewCount"}
- *   FieldMetadata: {
- *     "Body__c": {
- *       "type": "LongTextArea",
- *       "length": 32000,
- *       "visibleLines": 10,
- *       "label": "Article Body",
- *       "description": "Rich text content from B2C Commerce"
- *     },
- *     "SFCC_External_ID__c": {
- *       "type": "Text",
- *       "length": 255,
- *       "label": "SFCC External ID",
- *       "description": "B2C content asset ID"
- *     },
- *     "View_Count__c": {
- *       "type": "Number",
- *       "precision": 10,
- *       "scale": 0,
- *       "label": "View Count",
- *       "description": "Number of article views"
- *     }
+ * Configuration Format:
+ * {
+ *   "_defaults": {
+ *     "contentFolderIDs": ["root"],
+ *     "batchSize": 50,
+ *     "exportMode": "delta",
+ *     "articleType": "Knowledge__kav",
+ *     "fieldMapping": {"Title":"name","Summary":"pageDescription","Body__c":"custom.body","SFCC_External_ID__c":"ID","UrlName":"ID"},
+ *     "autoCreateFields": false,
+ *     "fieldMetadata": {},
+ *     "enableDebugLogging": false,
+ *     "publishArticles": false
+ *   },
+ *   "SiteID": {
+ *     // Site-specific overrides...
  *   }
- *   Result: Creates fields with exact specifications
+ * }
  *
- * Example 3: Validation only (no auto-create)
- *   AutoCreateFields: false
- *   FieldMapping: {"Title":"name","Body__c":"custom.body"}
- *   Result: Validates fields exist, logs warnings if missing, but doesn't create them
+ * Supports:
+ * - Field transformations (urlSafe, replaceSpaces, lowercase, uppercase, removeSpaces)
+ * - Static field values (override mapped values)
+ * - Record Type lookup by DeveloperName
+ * - Multi-folder content aggregation with deduplication
  *
  * @module scripts/jobs/ExportContentToKnowledge
  */
@@ -69,6 +44,8 @@ var authHelper = require('int_salesforce_knowledge/cartridge/scripts/helpers/sal
 var contentMappingHelper = require('int_salesforce_knowledge/cartridge/scripts/helpers/contentMappingHelper');
 var knowledgeHelper = require('int_salesforce_knowledge/cartridge/scripts/helpers/salesforceKnowledgeHelper');
 var toolingHelper = require('int_salesforce_knowledge/cartridge/scripts/helpers/salesforceToolingHelper');
+var siteConfigHelper = require('int_salesforce_knowledge/cartridge/scripts/helpers/siteConfigHelper');
+var recordTypeHelper = require('int_salesforce_knowledge/cartridge/scripts/helpers/recordTypeHelper');
 
 /**
  * Main job execution function
@@ -139,46 +116,82 @@ exports.execute = function (parameters, stepExecution) {
         logger.info('Configuration validated successfully');
 
         // ========================================
-        // 2. GET JOB PARAMETERS
+        // 2. GET JOB PARAMETERS & BUILD CONFIGURATION
         // ========================================
-        logger.info('Step 2: Processing job parameters');
+        logger.info('Step 2: Processing job parameters and building configuration');
 
-        var contentFolderID = parameters.ContentFolderID || 'root';
-        var batchSize = parameters.BatchSize || 50;
-        var exportMode = parameters.ExportMode || 'delta';
-        var articleType = parameters.ArticleType || 'Knowledge__kav';
-        var fieldMapping = parameters.FieldMapping || '{"Title":"name","Summary":"pageDescription","Body__c":"custom.body","SFCC_External_ID__c":"ID","UrlName":"ID"}';
-        var dataCategory = parameters.DataCategory || null;
-        var autoCreateFields = parameters.AutoCreateFields || false;
-        var fieldMetadata = parameters.FieldMetadata || '{}';
-        var enableDebugLogging = parameters.EnableDebugLogging || false;
-        var publishArticles = parameters.PublishArticles || false;
-        // Note: serviceID was already read in Step 1 for validation
+        // Get SiteConfigurations parameter
+        var siteConfigurationsJSON = parameters.SiteConfigurations || '';
 
-        logger.info('Job Parameters:');
-        logger.info('  - Content Folder ID: ' + contentFolderID);
-        logger.info('  - Batch Size: ' + batchSize);
-        logger.info('  - Export Mode: ' + exportMode);
-        logger.info('  - Article Type: ' + articleType);
-        logger.info('  - Data Category: ' + (dataCategory || 'None'));
-        logger.info('  - Field Mapping: ' + fieldMapping);
-        logger.info('  - Auto Create Fields: ' + autoCreateFields);
-        logger.info('  - Field Metadata: ' + fieldMetadata);
-        logger.info('  - Enable Debug Logging: ' + enableDebugLogging);
-        logger.info('  - Publish Articles: ' + publishArticles);
-        logger.info('  - Service ID: ' + serviceID);
+        // Validate SiteConfigurations is provided
+        if (!siteConfigurationsJSON || siteConfigurationsJSON.trim() === '') {
+            logger.error('SiteConfigurations parameter is required');
+            logger.error('Please provide a valid SiteConfigurations JSON in the job step configuration');
+            return new Status(Status.ERROR, 'ERROR', 'SiteConfigurations parameter is required');
+        }
 
-        // Build configuration object to pass to helpers
-        var config = {
-            articleType: articleType,
-            fieldMapping: fieldMapping,
-            dataCategory: dataCategory,
-            enableDebugLogging: enableDebugLogging,
-            publishArticles: publishArticles,
-            serviceID: serviceID
-        };
+        // Parse site configurations
+        var allSiteConfigs = siteConfigHelper.parseSiteConfigurations(siteConfigurationsJSON);
+        if (!allSiteConfigs) {
+            logger.error('Failed to parse SiteConfigurations JSON');
+            return new Status(Status.ERROR, 'ERROR', 'Invalid SiteConfigurations JSON');
+        }
 
-        // Validate batch size
+        // Get current site ID
+        var currentSiteID = siteConfigHelper.getCurrentSiteID();
+        if (!currentSiteID) {
+            logger.error('Unable to determine current site ID');
+            return new Status(Status.ERROR, 'ERROR', 'Unable to determine current site');
+        }
+
+        logger.info('Current site: ' + currentSiteID);
+
+        // Get site-specific configuration with defaults inheritance
+        var config = siteConfigHelper.getSiteConfiguration(allSiteConfigs, currentSiteID);
+        if (!config) {
+            logger.error('Failed to get configuration for site: ' + currentSiteID);
+            return new Status(Status.ERROR, 'ERROR', 'Configuration not found for site: ' + currentSiteID);
+        }
+
+        // Validate configuration
+        var validation = siteConfigHelper.validateConfiguration(config, currentSiteID);
+        if (!validation.valid) {
+            logger.error('Configuration validation failed for site: ' + currentSiteID);
+            validation.errors.forEach(function (error) {
+                logger.error('  - ' + error);
+            });
+            return new Status(Status.ERROR, 'ERROR', 'Invalid configuration for site: ' + currentSiteID);
+        }
+
+        // Extract parameters from config
+        var contentFolderID = siteConfigHelper.normalizeContentFolderIDs(config.contentFolderIDs || ['root']);
+        var batchSize = config.batchSize || 50;
+        var exportMode = config.exportMode || 'delta';
+        var autoCreateFields = config.autoCreateFields || false;
+        var fieldMetadata = JSON.stringify(config.fieldMetadata || {});
+
+        // Add serviceID to config (from Step 1)
+        config.serviceID = serviceID;
+
+        // Set defaults for optional config properties
+        if (!config.articleType) config.articleType = 'Knowledge__kav';
+
+        // Handle fieldMapping - ensure it's always a JSON string for helper functions
+        // If it's an object (from parsed SiteConfigurations), convert to JSON string
+        if (!config.fieldMapping) {
+            config.fieldMapping = '{"Title":"name","Summary":"pageDescription","Body__c":"custom.body","SFCC_External_ID__c":"ID","UrlName":"ID"}';
+        } else if (typeof config.fieldMapping === 'object') {
+            // Convert object to JSON string
+            config.fieldMapping = JSON.stringify(config.fieldMapping);
+        }
+
+        if (config.enableDebugLogging === undefined) config.enableDebugLogging = false;
+        if (config.publishArticles === undefined) config.publishArticles = false;
+
+        // Log effective configuration
+        siteConfigHelper.logEffectiveConfiguration(config, currentSiteID);
+
+        // Validate batch size (common for both modes)
         if (batchSize < 1 || batchSize > 500) {
             logger.error('Invalid batch size: ' + batchSize + ' (must be 1-500)');
             return new Status(Status.ERROR, 'ERROR', 'Invalid batch size');
@@ -189,7 +202,12 @@ exports.execute = function (parameters, stepExecution) {
         // ========================================
         logger.info('Step 3: Retrieving content assets from B2C Commerce');
 
-        var contentAssets = contentMappingHelper.getContentAssets(contentFolderID, enableDebugLogging, exportMode);
+        // Get content assets from all configured folders
+        var contentAssets = contentMappingHelper.getContentAssetsFromMultipleFolders(
+            contentFolderID,  // This is now always an array
+            config.enableDebugLogging || false,
+            exportMode
+        );
 
         if (!contentAssets || contentAssets.length === 0) {
             logger.warn('No content assets found to export');
@@ -214,13 +232,57 @@ exports.execute = function (parameters, stepExecution) {
         logger.info('  - Instance URL: ' + authResult.instanceUrl);
 
         // ========================================
+        // 4.3. LOOKUP RECORD TYPE (if configured)
+        // ========================================
+        if (config.recordTypeName) {
+            logger.info('Step 4.3: Looking up Record Type');
+
+            var recordTypeResult = recordTypeHelper.getRecordTypeIdFromConfig(
+                config,
+                authResult.accessToken,
+                authResult.instanceUrl,
+                serviceID
+            );
+
+            if (!recordTypeResult.success) {
+                logger.error('Record Type lookup failed: ' + recordTypeResult.error);
+                return new Status(Status.ERROR, 'ERROR', 'Record Type lookup failed: ' + recordTypeResult.error);
+            }
+
+            if (recordTypeResult.recordTypeId) {
+                logger.info('Record Type found: ' + config.recordTypeName + ' (ID: ' + recordTypeResult.recordTypeId + ')');
+                config.recordTypeId = recordTypeResult.recordTypeId;
+            } else {
+                logger.info('No Record Type configured, using default');
+            }
+        } else {
+            logger.info('Step 4.3: No Record Type configured, skipping lookup');
+        }
+
+        // ========================================
         // 4.5. ENSURE MAPPED CUSTOM FIELDS EXIST
         // ========================================
         logger.info('Step 4.5: Validating mapped custom fields in Salesforce');
 
+        // Merge fieldMapping with static fields for validation
+        // Static fields need to exist in Salesforce too
+        var allFieldsMapping = JSON.parse(config.fieldMapping);
+        if (config.static && typeof config.static === 'object') {
+            logger.info('Including static fields in validation: ' + Object.keys(config.static).join(', '));
+            for (var staticField in config.static) {
+                if (config.static.hasOwnProperty(staticField) && staticField.indexOf('__c') > -1) {
+                    // Add static field to mapping with a dummy value for validation
+                    // This ensures static fields are checked/created too
+                    if (!allFieldsMapping[staticField]) {
+                        allFieldsMapping[staticField] = 'static';
+                    }
+                }
+            }
+        }
+
         var fieldCheckResult = toolingHelper.ensureAllMappedFieldsExist(
-            articleType,
-            fieldMapping,
+            config.articleType,
+            JSON.stringify(allFieldsMapping),
             fieldMetadata,
             autoCreateFields,
             serviceID
@@ -424,10 +486,31 @@ exports.afterStep = function (success, parameters, stepExecution) {
 exports.getTotalCount = function (parameters, stepExecution) {
     try {
         var contentMappingHelper = require('int_salesforce_knowledge/cartridge/scripts/helpers/contentMappingHelper');
-        var contentFolderID = parameters.ContentFolderID || 'root';
-        var exportMode = parameters.ExportMode || 'delta';
-        var contentAssets = contentMappingHelper.getContentAssets(contentFolderID, false, exportMode);
+        var siteConfigHelper = require('int_salesforce_knowledge/cartridge/scripts/helpers/siteConfigHelper');
 
+        var siteConfigurationsJSON = parameters.SiteConfigurations || '';
+        if (!siteConfigurationsJSON || siteConfigurationsJSON.trim() === '') {
+            return 0;
+        }
+
+        // Parse site configurations
+        var allSiteConfigs = siteConfigHelper.parseSiteConfigurations(siteConfigurationsJSON);
+        if (!allSiteConfigs) return 0;
+
+        // Get current site ID
+        var currentSiteID = siteConfigHelper.getCurrentSiteID();
+        if (!currentSiteID) return 0;
+
+        // Get site-specific configuration
+        var config = siteConfigHelper.getSiteConfiguration(allSiteConfigs, currentSiteID);
+        if (!config) return 0;
+
+        // Get content folder IDs and export mode from config
+        var contentFolderIDs = siteConfigHelper.normalizeContentFolderIDs(config.contentFolderIDs || ['root']);
+        var exportMode = config.exportMode || 'delta';
+
+        // Get content assets count
+        var contentAssets = contentMappingHelper.getContentAssetsFromMultipleFolders(contentFolderIDs, false, exportMode);
         return contentAssets ? contentAssets.length : 0;
     } catch (e) {
         return 0;

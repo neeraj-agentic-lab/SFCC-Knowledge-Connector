@@ -123,7 +123,7 @@ function upsertKnowledgeArticle(contentAsset, config) {
             logger.info('Found existing article: KnowledgeArticleId=' + existingArticle.KnowledgeArticleId + ', PublishStatus=' + existingArticle.PublishStatus);
 
             // Map content asset to article format for UPDATE (isCreate = false)
-            var updateData = contentMappingHelper.mapContentToArticle(contentAsset, articleType, fieldMapping, dataCategory, false, enableDebugLogging);
+            var updateData = contentMappingHelper.mapContentToArticle(contentAsset, articleType, fieldMapping, dataCategory, false, enableDebugLogging, config);
 
             if (!updateData || Object.keys(updateData).length <= 1) {
                 logger.error('Article mapping resulted in empty data');
@@ -151,7 +151,7 @@ function upsertKnowledgeArticle(contentAsset, config) {
             logger.info('No existing article found, creating new article for content: ' + contentAsset.ID);
 
             // Map content asset to article format for CREATE (isCreate = true)
-            var createData = contentMappingHelper.mapContentToArticle(contentAsset, articleType, fieldMapping, dataCategory, true, enableDebugLogging);
+            var createData = contentMappingHelper.mapContentToArticle(contentAsset, articleType, fieldMapping, dataCategory, true, enableDebugLogging, config);
 
             if (!createData || Object.keys(createData).length <= 1) {
                 logger.error('Article mapping resulted in empty data');

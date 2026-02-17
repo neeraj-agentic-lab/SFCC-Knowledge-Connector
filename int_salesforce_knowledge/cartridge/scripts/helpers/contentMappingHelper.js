@@ -13,6 +13,7 @@ var ContentMgr = require('dw/content/ContentMgr');
 var ContentSearchModel = require('dw/content/ContentSearchModel');
 var Site = require('dw/system/Site');
 var Logger = require('dw/system/Logger');
+var fieldTransformHelper = require('int_salesforce_knowledge/cartridge/scripts/helpers/fieldTransformHelper');
 
 // Initialize logger
 var logger = Logger.getLogger('SFKnowledge', 'ContentMapping');
@@ -132,6 +133,80 @@ function getContentAssets(folderID, enableDebugLogging, exportMode) {
     }
 
     return contentAssets;
+}
+
+/**
+ * Get Content Assets from Multiple Folders
+ *
+ * Retrieves content assets from multiple folders and aggregates them with deduplication.
+ * Supports folder ID formats: array, comma-separated string, or single string.
+ *
+ * @param {Array<string>|string} folderIDs - Array of folder IDs, comma-separated string, or single folder ID
+ * @param {boolean} enableDebugLogging - Enable detailed debug logging
+ * @param {string} exportMode - Export mode: 'full' or 'delta'
+ * @returns {Array<Object>} Deduplicated array of formatted content asset objects
+ *
+ * @example
+ * // Multiple folders as array
+ * var assets = getContentAssetsFromMultipleFolders(['faq', 'help', 'guides'], false, 'delta');
+ *
+ * // Comma-separated string
+ * var assets = getContentAssetsFromMultipleFolders('faq,help,guides', false, 'full');
+ *
+ * // Single folder
+ * var assets = getContentAssetsFromMultipleFolders('root', false, 'delta');
+ */
+function getContentAssetsFromMultipleFolders(folderIDs, enableDebugLogging, exportMode) {
+    // Normalize input to array
+    var normalizedFolderIDs = [];
+
+    if (Array.isArray(folderIDs)) {
+        normalizedFolderIDs = folderIDs;
+    } else if (typeof folderIDs === 'string') {
+        if (folderIDs.indexOf(',') !== -1) {
+            // Comma-separated - split and trim
+            normalizedFolderIDs = folderIDs.split(',').map(function (id) {
+                return id.trim();
+            }).filter(function (id) {
+                return id !== '';
+            });
+        } else {
+            // Single folder
+            normalizedFolderIDs = [folderIDs.trim()];
+        }
+    } else {
+        logger.warn('Invalid folderIDs format, using "root"');
+        normalizedFolderIDs = ['root'];
+    }
+
+    logger.info('Retrieving content assets from ' + normalizedFolderIDs.length + ' folder(s): ' + normalizedFolderIDs.join(', '));
+
+    // Get content from all folders
+    var allAssets = [];
+    var seenIDs = {};  // For deduplication
+
+    for (var i = 0; i < normalizedFolderIDs.length; i++) {
+        var folderID = normalizedFolderIDs[i];
+        logger.debug('Fetching content from folder: ' + folderID);
+
+        var folderAssets = getContentAssets(folderID, enableDebugLogging, exportMode);
+
+        // Add assets with deduplication
+        for (var j = 0; j < folderAssets.length; j++) {
+            var asset = folderAssets[j];
+
+            if (!seenIDs[asset.ID]) {
+                allAssets.push(asset);
+                seenIDs[asset.ID] = true;
+            } else {
+                logger.debug('Skipping duplicate content asset: ' + asset.ID + ' (found in multiple folders)');
+            }
+        }
+    }
+
+    logger.info('Total content assets after deduplication: ' + allAssets.length);
+
+    return allAssets;
 }
 
 /**
@@ -313,28 +388,45 @@ function convertToSalesforceSafeValue(value) {
  * Map Content Asset to Knowledge Article
  *
  * Transforms B2C Content Asset into Salesforce Knowledge Article format
- * using field mappings.
+ * using field mappings, transformations, and static fields.
+ *
+ * Enhanced Features (v2.1+):
+ * - Applies field transformations (urlSafe, replaceSpaces, etc.)
+ * - Merges static field values
+ * - Adds Record Type ID if configured
  *
  * @param {Object} contentAsset - Formatted content asset
  * @param {string} articleType - Salesforce Knowledge Article Type (e.g., 'FAQ__kav')
- * @param {Object} fieldMapping - Field mapping object (SF field -> B2C field path)
+ * @param {Object|string} fieldMapping - Field mapping object or JSON string (SF field -> B2C field path)
  * @param {string} dataCategory - Optional data category
  * @param {boolean} isCreate - Whether this is for article creation (true) or update (false)
  * @param {boolean} enableDebugLogging - Enable detailed debug logging
+ * @param {Object} config - Optional full configuration object (v2.1+)
  * @returns {Object} Knowledge Article object ready for Salesforce API
  *
  * @example
- * var fieldMapping = {
- *     "Title": "name",
- *     "Summary": "pageDescription",
- *     "Body__c": "custom.body",
- *     "SFCC_External_ID__c": "ID"
+ * var config = {
+ *     fieldMapping: { "Title": "name", "UrlName": "name" },
+ *     transforms: { "UrlName": "urlSafe:-" },
+ *     static: { "Source__c": "SFCC" },
+ *     recordTypeId: "0124H000000AbCDQA0"
  * };
  *
- * var article = mapContentToArticle(contentAsset, 'Knowledge__kav', fieldMapping, 'Products:Electronics', true, true);
+ * var article = mapContentToArticle(contentAsset, 'Knowledge__kav', config.fieldMapping, 'Products:Electronics', true, true, config);
  */
-function mapContentToArticle(contentAsset, articleType, fieldMapping, dataCategory, isCreate, enableDebugLogging) {
+function mapContentToArticle(contentAsset, articleType, fieldMapping, dataCategory, isCreate, enableDebugLogging, config) {
     logger.debug('Mapping content asset ' + contentAsset.ID + ' to article type: ' + articleType + ' (isCreate: ' + isCreate + ')');
+
+    // Parse fieldMapping if it's a string
+    var parsedFieldMapping = fieldMapping;
+    if (typeof fieldMapping === 'string') {
+        try {
+            parsedFieldMapping = JSON.parse(fieldMapping);
+        } catch (e) {
+            logger.error('Failed to parse fieldMapping JSON: ' + e.message);
+            parsedFieldMapping = {};
+        }
+    }
 
     if (enableDebugLogging) {
         logger.info('========== DEBUG: FIELD MAPPING PROCESS ==========');
@@ -352,10 +444,10 @@ function mapContentToArticle(contentAsset, articleType, fieldMapping, dataCatego
     };
 
     try {
-        // Apply field mappings from site preferences
-        for (var sfField in fieldMapping) {
-            if (fieldMapping.hasOwnProperty(sfField)) {
-                var b2cFieldPath = fieldMapping[sfField];
+        // STEP 1: Apply field mappings from configuration
+        for (var sfField in parsedFieldMapping) {
+            if (parsedFieldMapping.hasOwnProperty(sfField)) {
+                var b2cFieldPath = parsedFieldMapping[sfField];
 
                 // Get value from content asset using nested property path
                 var rawValue = getNestedProperty(contentAsset, b2cFieldPath);
@@ -394,7 +486,50 @@ function mapContentToArticle(contentAsset, articleType, fieldMapping, dataCatego
             }
         }
 
-        // Add Language field only during creation (not during updates)
+        // STEP 2: Apply field transformations (v2.1+)
+        if (config && config.transforms) {
+            if (enableDebugLogging) {
+                logger.info('Applying field transformations:');
+            }
+
+            article = fieldTransformHelper.applyTransformsToFields(article, config.transforms);
+
+            if (enableDebugLogging) {
+                for (var transformedField in config.transforms) {
+                    if (config.transforms.hasOwnProperty(transformedField) && article[transformedField]) {
+                        logger.info('  - Transformed Field: "' + transformedField + '" = "' + article[transformedField] + '"');
+                    }
+                }
+            }
+        }
+
+        // STEP 3: Merge static field values (v2.1+)
+        if (config && config.static) {
+            if (enableDebugLogging) {
+                logger.info('Merging static field values:');
+            }
+
+            for (var staticField in config.static) {
+                if (config.static.hasOwnProperty(staticField)) {
+                    var staticValue = config.static[staticField];
+                    article[staticField] = staticValue;
+
+                    if (enableDebugLogging) {
+                        logger.info('  - Static Field: "' + staticField + '" = ' + JSON.stringify(staticValue));
+                    }
+                }
+            }
+        }
+
+        // STEP 4: Add Record Type ID (v2.1+)
+        if (config && config.recordTypeId) {
+            article.RecordTypeId = config.recordTypeId;
+            if (enableDebugLogging) {
+                logger.info('  - Record Type ID: ' + config.recordTypeId);
+            }
+        }
+
+        // STEP 5: Add Language field only during creation (not during updates)
         // The Language field in Salesforce Knowledge is a system field that cannot be modified after creation
         if (isCreate !== false) {
             article.Language = 'en_US'; // TODO: Make configurable or map from site locale
@@ -410,7 +545,7 @@ function mapContentToArticle(contentAsset, articleType, fieldMapping, dataCatego
             }
         }
 
-        // Add data category if provided
+        // STEP 6: Add data category if provided
         if (dataCategory && dataCategory.trim() !== '') {
             // Note: Data categories in Salesforce require specific API structure
             // This is a simplified example - actual implementation may need category group mapping
@@ -536,8 +671,20 @@ function exportToExternalAPI(contentAssets, batchSize, exportFunction) {
 
             result.totalProcessed += batch.length;
 
-            if (batchResult.success) {
-                result.totalSuccess += batchResult.successCount || batch.length;
+            // Always use successCount and failureCount from batch result
+            // Don't rely on batchResult.success which just indicates no exceptions
+            if (batchResult.successCount !== undefined && batchResult.failureCount !== undefined) {
+                result.totalSuccess += batchResult.successCount;
+                result.totalFailed += batchResult.failureCount;
+
+                if (batchResult.failureCount > 0) {
+                    logger.warn('Batch ' + (i + 1) + ' completed with ' + batchResult.failureCount + ' failures');
+                } else {
+                    logger.info('Batch ' + (i + 1) + ' completed successfully');
+                }
+            } else if (batchResult.success) {
+                // Fallback for old batch format
+                result.totalSuccess += batch.length;
                 logger.info('Batch ' + (i + 1) + ' completed successfully');
             } else {
                 result.totalFailed += batch.length;
@@ -633,6 +780,7 @@ function updateSyncMetadata(contentAssetID, knowledgeArticleId, versionId) {
 // Export public functions
 module.exports = {
     getContentAssets: getContentAssets,
+    getContentAssetsFromMultipleFolders: getContentAssetsFromMultipleFolders,
     formatContentAsset: formatContentAsset,
     mapContentToArticle: mapContentToArticle,
     getNestedProperty: getNestedProperty,

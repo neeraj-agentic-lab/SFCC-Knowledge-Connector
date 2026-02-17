@@ -31,6 +31,17 @@ A powerful, production-ready Salesforce Commerce Cloud (SFCC) B2C Commerce cartr
   - [Service Configuration](#service-configuration)
   - [Connected App Setup](#connected-app-setup)
   - [Job Configuration](#job-configuration)
+  - [Publishing Control](#publishing-control)
+- [Multi-Site Configuration](#-multi-site-configuration-v21)
+  - [Configuration Schema](#complete-configuration-schema)
+  - [Field Transformations](#field-transformations)
+  - [Static Fields](#static-field-values)
+  - [Record Types](#record-type-configuration)
+  - [Multi-Folder Support](#multi-folder-support)
+  - [Configuration Examples](#configuration-examples)
+  - [Migration Guide](#migration-from-single-site-to-multi-site)
+  - [Troubleshooting](#troubleshooting-multi-site-configuration)
+  - [Best Practices](#best-practices)
 - [Incremental Sync](#incremental-sync)
 - [Field Mapping](#field-mapping)
 - [Automatic Field Creation](#automatic-field-creation)
@@ -323,7 +334,7 @@ Business Manager > Administration > Operations > Services
 ```
 Business Manager > Administration > Operations > Jobs
 > New Job > Add Step: custom.ExportContentToKnowledge
-> Set parameters: ServiceID, ExportMode=delta, AutoCreateFields=true
+> Set parameters: ServiceID, SiteConfigurations (JSON)
 ```
 
 ### 5. Run Job
@@ -347,7 +358,7 @@ Click "Run Now" or schedule for automated sync
 | **📊 Sync Metadata Tracking** | Tracks Knowledge IDs and timestamps on Content Assets | Enables intelligent delta sync |
 | **🔍 External ID Matching** | Uses `SFCC_External_ID__c` for reliable content identification | Prevents duplicate articles |
 | **📝 Versioning Management** | Handles Draft → Online article state transitions | Complies with Salesforce Knowledge rules |
-| **🚀 Auto-Publishing** | Automatically publishes articles after creation/update | Articles go live immediately |
+| **🚀 Publish Control** | Configurable auto-publish or keep as draft for manual review | Flexible approval workflows |
 | **📂 Folder-Based Sync** | Sync specific folders or all content recursively | Flexible content organization |
 
 ### 🔧 Advanced Features
@@ -619,30 +630,24 @@ Create and configure the export job in Business Manager:
 
 #### Step 3: Configure Parameters
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| **ServiceID** | String | `salesforce.oauth` | Service ID from Operations > Services |
-| **ContentFolderID** | String | `root` | Content folder to export (or 'root' for all) |
-| **ArticleType** | String | `Knowledge__kav` | Salesforce Knowledge Article Type API name |
-| **FieldMapping** | String | (see below) | JSON field mapping |
-| **AutoCreateFields** | Boolean | `false` | Auto-create missing custom fields |
-| **FieldMetadata** | String | `{}` | JSON field metadata for creation |
-| **BatchSize** | Integer | `50` | Articles per batch (1-500) |
-| **EnableDebugLogging** | Boolean | `false` | Enable detailed debug logs |
-| **ExportMode** | String | `delta` | Export mode: `delta` (only modified) or `full` (all content) |
-| **DataCategory** | String | (empty) | Salesforce data category |
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| **ServiceID** | String | No | Service ID from Operations > Services (default: `salesforce.oauth`) |
+| **SiteConfigurations** | Text | Yes | Multi-site configuration JSON with `_defaults` inheritance. See [Multi-Site Configuration](#-multi-site-configuration-v21) section for complete documentation and examples. |
 
-#### Default Field Mapping
+**Note**: As of v2.1+, all configuration is done through the `SiteConfigurations` parameter using JSON. This replaces individual parameters and enables:
+- Site-specific configurations with defaults inheritance
+- Field transformations (urlSafe, replaceSpaces, etc.)
+- Static field values
+- Record Type configuration by API name
+- Multi-folder support with deduplication
 
-```json
-{
-  "Title": "name",
-  "Summary": "pageDescription",
-  "Body__c": "custom.body",
-  "SFCC_External_ID__c": "ID",
-  "UrlName": "ID"
-}
-```
+**See the [Multi-Site Configuration](#-multi-site-configuration-v21) section below for:**
+- Complete configuration schema
+- Field transformations
+- Static field values
+- Record Type configuration
+- Multiple configuration examples (simple to production-ready)
 
 #### Step 4: Schedule Job (Optional)
 
@@ -652,6 +657,903 @@ Create and configure the export job in Business Manager:
    - **Interval**: Every 1 Hour (or as needed)
    - **Start Time**: Choose appropriate time
    - **Time Zone**: Your time zone
+
+### Publishing Control
+
+The integration provides configurable control over whether articles are automatically published or remain in draft status for manual review.
+
+#### PublishArticles Parameter
+
+By default, articles are **NOT automatically published** (PublishArticles: false). This allows for manual review and approval workflows before content goes live.
+
+**Configuration Options:**
+
+```
+PublishArticles: false  (default)
+- Articles created/updated as drafts
+- Remain in draft status for manual review
+- Must be published manually in Salesforce
+- Recommended for: Production environments with approval workflows
+```
+
+```
+PublishArticles: true
+- Articles automatically published after creation/update
+- Go live immediately (Draft → Online)
+- No manual intervention required
+- Recommended for: Automated content pipelines, non-production environments
+```
+
+**Use Cases:**
+
+| Scenario | Recommended Setting | Reason |
+|----------|-------------------|--------|
+| **Production with approval** | `false` | Content reviewed before publishing |
+| **Automated pipeline** | `true` | Fully automated content delivery |
+| **Staging/Testing** | `true` | Faster testing cycles |
+| **Multiple reviewers** | `false` | Draft workflow supports collaboration |
+| **High-risk content** | `false` | Additional review layer before publishing |
+
+**Logging:**
+
+When PublishArticles is disabled, you'll see logs like:
+```
+INFO: PublishArticles is disabled, article will remain in draft status
+INFO: Successfully updated draft article: ka0xx000000002
+```
+
+When enabled:
+```
+INFO: PublishArticles is enabled, publishing article
+INFO: Successfully published article: kA0xx000000001
+```
+
+**Manual Publishing:**
+
+If PublishArticles is set to false, articles can be published manually in Salesforce:
+1. Navigate to: `Service > Knowledge > Articles`
+2. Find the article by title or External ID
+3. Click **Publish**
+4. Confirm publication
+
+**Important: Version Handling with Draft Mode**
+
+When `PublishArticles: false` (draft mode), the integration intelligently handles article versions:
+
+| Current State in Salesforce | What Happens on Sync | Result |
+|----------------------------|---------------------|---------|
+| **No article exists** | Creates new draft | New draft article created |
+| **Draft exists** | Updates existing draft | Same draft updated (no new version) |
+| **Online exists, no draft** | Creates draft from online, then updates | New draft version created |
+| **Both Online + Draft exist** | Updates existing draft | Draft updated (no duplicate) |
+
+**Example Workflow:**
+```
+Day 1, Run 1 (PublishArticles: false):
+- Content "FAQ-001" synced → Creates Draft (ka0001)
+- Draft remains unpublished
+
+Day 1, Run 2 (same content modified):
+- Finds existing Draft (ka0001)
+- Updates Draft ka0001 in-place
+- Still Draft (no new version created)
+
+Day 2 (manually publish in Salesforce):
+- Draft ka0001 published → becomes Online
+
+Day 2, Run 3 (content modified again):
+- Finds Online version
+- Creates NEW Draft ka0002 from Online
+- Updates Draft ka0002
+- Online ka0001 remains published
+```
+
+This prevents the "TRANSLATIONALREADYEXIST" error and allows iterative content refinement before publishing.
+
+---
+
+## 🌐 Multi-Site Configuration (v2.1+)
+
+**New in v2.1**: Configure multiple sites with different settings in a single job using the `SiteConfigurations` parameter.
+
+### Why Multi-Site Configuration?
+
+Instead of creating separate jobs for each site, you can now:
+- ✅ Configure all sites in one place with a single JSON parameter
+- ✅ Use `_defaults` to reduce duplication (DRY principle)
+- ✅ Override specific settings per site
+- ✅ Support site-specific Record Types, field transformations, static fields, and folders
+- ✅ Maintain backward compatibility with single-site configurations
+
+### Quick Example
+
+```json
+{
+  "_defaults": {
+    "articleType": "Knowledge__kav",
+    "fieldMapping": { "Title": "name", "Body__c": "custom.body" },
+    "transforms": { "UrlName": "urlSafe:-" },
+    "static": { "Source__c": "SFCC" }
+  },
+  "RefArch": {
+    "contentFolderIDs": ["us-faq"],
+    "recordTypeName": "Product_FAQ",
+    "static": { "SubsidiaryID__c": 7, "RegionCode__c": "US" }
+  },
+  "RefArchGlobal": {
+    "contentFolderIDs": ["eu-faq"],
+    "recordTypeName": "Support_Article",
+    "static": { "SubsidiaryID__c": 12, "RegionCode__c": "EU" }
+  }
+}
+```
+
+---
+
+### Complete Configuration Schema
+
+```json
+{
+  "_defaults": {
+    // Article Configuration
+    "articleType": "Knowledge__kav",
+    "contentFolderIDs": ["root"],
+    "batchSize": 50,
+    "exportMode": "delta",
+    "publishArticles": false,
+    "enableDebugLogging": false,
+    "autoCreateFields": true,
+
+    // Field Mapping (Salesforce Field → B2C Field Path)
+    "fieldMapping": {
+      "Title": "name",
+      "Summary": "pageDescription",
+      "Body__c": "custom.body",
+      "SFCC_External_ID__c": "ID",
+      "UrlName": "name",
+      "Author__c": "custom.author",
+      "Category__c": "custom.category"
+    },
+
+    // Field Transformations
+    "transforms": {
+      "UrlName": "urlSafe:-",
+      "Summary": "lowercase"
+    },
+
+    // Static Field Values
+    "static": {
+      "Source__c": "SFCC",
+      "Platform__c": "B2C Commerce"
+    },
+
+    // Field Metadata for Auto-Creation
+    "fieldMetadata": {
+      "Body__c": {
+        "type": "LongTextArea",
+        "length": 32000,
+        "visibleLines": 10,
+        "label": "Article Body",
+        "description": "Rich text content from B2C Commerce"
+      },
+      "SFCC_External_ID__c": {
+        "type": "Text",
+        "length": 255,
+        "label": "SFCC External ID",
+        "description": "B2C content asset ID for synchronization"
+      }
+    }
+  },
+
+  // Site-Specific Configurations
+  "RefArch": {
+    "contentFolderIDs": ["us-faq", "us-help", "us-guides"],
+    "recordTypeName": "Product_FAQ",
+    "dataCategory": "Products:Electronics",
+    "transforms": {
+      "UrlName": "urlSafe:-",
+      "Slug__c": "replaceSpaces:_"
+    },
+    "static": {
+      "SubsidiaryID__c": 7,
+      "RegionCode__c": "US",
+      "LanguageCode__c": "en_US",
+      "Priority__c": 1
+    }
+  },
+
+  "RefArchGlobal": {
+    "contentFolderIDs": ["eu-faq", "eu-help"],
+    "recordTypeName": "Support_Article",
+    "dataCategory": "Support:International",
+    "batchSize": 100,
+    "transforms": {
+      "UrlName": "urlSafe:_"
+    },
+    "static": {
+      "SubsidiaryID__c": 12,
+      "RegionCode__c": "EU",
+      "LanguageCode__c": "en_GB"
+    }
+  }
+}
+```
+
+---
+
+### Configuration Components
+
+#### 1. `_defaults` Section (Required)
+
+The `_defaults` object contains baseline configuration inherited by all sites.
+
+**Purpose**: Define common settings once, avoid repetition across sites.
+
+```json
+{
+  "_defaults": {
+    "articleType": "Knowledge__kav",
+    "fieldMapping": { "Title": "name", "Body__c": "custom.body" },
+    "static": { "Source__c": "SFCC" }
+  }
+}
+```
+
+#### 2. Site-Specific Sections
+
+Each site (identified by Site ID) can override any default setting.
+
+**Format**: `"SiteID": { configuration }`
+
+```json
+{
+  "RefArch": {
+    "recordTypeName": "Product_FAQ",
+    "static": { "SubsidiaryID__c": 7 }
+  }
+}
+```
+
+**Inheritance**: Site inherits all `_defaults` settings, then applies its own overrides.
+
+---
+
+### Field Transformations
+
+Transform field values before sending to Salesforce.
+
+#### Available Transformations
+
+| Transform | Syntax | Example Input | Example Output |
+|-----------|--------|---------------|----------------|
+| **replaceSpaces** | `replaceSpaces:-` | `"How to Reset"` | `"How-to-Reset"` |
+| | `replaceSpaces:_` | `"How to Reset"` | `"How_to_Reset"` |
+| | `replaceSpaces:` | `"How to Reset"` | `"HowtoReset"` |
+| **urlSafe** | `urlSafe:-` | `"How to Reset?"` | `"how-to-reset"` |
+| | `urlSafe:_` | `"C++ Guide!"` | `"c_guide"` |
+| **lowercase** | `lowercase` | `"Product FAQ"` | `"product faq"` |
+| **uppercase** | `uppercase` | `"product faq"` | `"PRODUCT FAQ"` |
+| **removeSpaces** | `removeSpaces` | `"How to Reset"` | `"HowtoReset"` |
+
+#### Simple Syntax (String)
+
+```json
+"transforms": {
+  "UrlName": "replaceSpaces:-",
+  "Slug__c": "urlSafe:_",
+  "InternalKey__c": "uppercase"
+}
+```
+
+#### Advanced Syntax (Object)
+
+```json
+"transforms": {
+  "CustomField__c": {
+    "type": "replace",
+    "pattern": "[^a-zA-Z0-9]",
+    "replaceWith": "_",
+    "flags": "g"
+  }
+}
+```
+
+#### Real-World Example
+
+**Input**: Content asset with `name = "How to Reset Password"`
+
+```json
+{
+  "fieldMapping": {
+    "Title": "name",
+    "UrlName": "name",
+    "Slug__c": "name",
+    "DisplayName__c": "name"
+  },
+  "transforms": {
+    "UrlName": "urlSafe:-",
+    "Slug__c": "replaceSpaces:_",
+    "DisplayName__c": "lowercase"
+  }
+}
+```
+
+**Output** in Salesforce:
+- `Title`: `"How to Reset Password"` (no transform)
+- `UrlName`: `"how-to-reset-password"` (URL-safe)
+- `Slug__c`: `"How_to_Reset_Password"` (underscores)
+- `DisplayName__c`: `"how to reset password"` (lowercase)
+
+---
+
+### Static Field Values
+
+Set fixed values for Salesforce fields that don't come from content assets.
+
+#### Use Cases
+
+- **Metadata**: Source system identifier, platform name
+- **Organization**: Subsidiary ID, region code, language
+- **Categorization**: Priority, status, type
+
+#### Configuration
+
+```json
+"static": {
+  "Source__c": "SFCC",
+  "Platform__c": "B2C Commerce",
+  "SubsidiaryID__c": 7,
+  "RegionCode__c": "US",
+  "LanguageCode__c": "en_US",
+  "Priority__c": 1,
+  "Status__c": "Active"
+}
+```
+
+#### Data Types Supported
+
+- **String**: `"Source__c": "SFCC"`
+- **Number**: `"SubsidiaryID__c": 7`
+- **Boolean**: `"IsActive__c": true`
+
+#### Merging Behavior
+
+Static fields are merged **after** field mapping and transformations.
+
+**Precedence**: Static values > Transformed values > Mapped values
+
+---
+
+### Record Type Configuration
+
+Configure Record Types using API Names (DeveloperName) instead of org-specific IDs.
+
+#### Why Use Record Types?
+
+- Different article types in Salesforce (Product FAQ, Support Article, etc.)
+- Page layouts and field requirements vary by Record Type
+- Org-specific IDs change between sandbox and production
+
+#### Configuration
+
+```json
+{
+  "RefArch": {
+    "recordTypeName": "Product_FAQ"
+  },
+  "RefArchGlobal": {
+    "recordTypeName": "Support_Article"
+  }
+}
+```
+
+#### How It Works
+
+1. Integration looks up Record Type by `DeveloperName` using SOQL
+2. Caches the Record Type ID for the job execution
+3. Adds `RecordTypeId` to article payload
+
+**Query**:
+```sql
+SELECT Id, Name, DeveloperName
+FROM RecordType
+WHERE SObjectType = 'Knowledge' AND DeveloperName = 'Product_FAQ'
+LIMIT 1
+```
+
+**Benefits**:
+- ✅ Org-agnostic configuration
+- ✅ Works across sandbox and production
+- ✅ Automatic caching (one lookup per site per execution)
+
+---
+
+### Multi-Folder Support
+
+Aggregate content from multiple folders per site with automatic deduplication.
+
+#### Syntax Options
+
+**Array** (Recommended):
+```json
+"contentFolderIDs": ["us-faq", "us-help", "us-guides"]
+```
+
+**Comma-Separated String**:
+```json
+"contentFolderIDs": "us-faq,us-help,us-guides"
+```
+
+**Single Folder**:
+```json
+"contentFolderIDs": "root"
+```
+
+#### Deduplication
+
+If the same content appears in multiple folders, it's only exported once.
+
+**Example**:
+- Folder `us-faq` contains: `faq-001`, `faq-002`
+- Folder `us-help` contains: `faq-002`, `help-001`
+- **Result**: Exports `faq-001`, `faq-002` (once), `help-001`
+
+---
+
+### Configuration Examples
+
+#### Example 1: Simple Multi-Site with Defaults
+
+**Scenario**: Two sites with minimal differences.
+
+```json
+{
+  "_defaults": {
+    "articleType": "Knowledge__kav",
+    "fieldMapping": {
+      "Title": "name",
+      "Body__c": "custom.body",
+      "SFCC_External_ID__c": "ID",
+      "UrlName": "name"
+    },
+    "transforms": {
+      "UrlName": "urlSafe:-"
+    },
+    "static": {
+      "Source__c": "SFCC"
+    }
+  },
+  "RefArch": {
+    "contentFolderIDs": ["us-content"],
+    "static": { "RegionCode__c": "US" }
+  },
+  "RefArchGlobal": {
+    "contentFolderIDs": ["eu-content"],
+    "static": { "RegionCode__c": "EU" }
+  }
+}
+```
+
+**Result**:
+- Both sites use same field mapping and transforms
+- Each site has different content folders and region codes
+- Configuration is ~70% smaller than duplicating everything
+
+#### Example 2: Different Record Types per Site
+
+**Scenario**: US site uses Product FAQ, EU site uses Support Article.
+
+```json
+{
+  "_defaults": {
+    "articleType": "Knowledge__kav",
+    "fieldMapping": {
+      "Title": "name",
+      "Body__c": "custom.body",
+      "SFCC_External_ID__c": "ID"
+    },
+    "autoCreateFields": true
+  },
+  "RefArch": {
+    "recordTypeName": "Product_FAQ",
+    "dataCategory": "Products:Electronics",
+    "contentFolderIDs": ["us-faq", "us-products"]
+  },
+  "RefArchGlobal": {
+    "recordTypeName": "Support_Article",
+    "dataCategory": "Support:International",
+    "contentFolderIDs": ["eu-support"]
+  }
+}
+```
+
+#### Example 3: Site-Specific Transformations
+
+**Scenario**: Different URL conventions per region.
+
+```json
+{
+  "_defaults": {
+    "fieldMapping": {
+      "Title": "name",
+      "UrlName": "name",
+      "Slug__c": "name"
+    }
+  },
+  "RefArch": {
+    "transforms": {
+      "UrlName": "urlSafe:-",
+      "Slug__c": "replaceSpaces:-"
+    }
+  },
+  "RefArchGlobal": {
+    "transforms": {
+      "UrlName": "urlSafe:_",
+      "Slug__c": "replaceSpaces:_"
+    }
+  },
+  "RefArchJapan": {
+    "transforms": {
+      "UrlName": "urlSafe:_",
+      "Slug__c": "lowercase"
+    }
+  }
+}
+```
+
+**Results** for content `"Product FAQ"`:
+
+| Site | UrlName | Slug__c |
+|------|---------|---------|
+| RefArch | `product-faq` | `Product-FAQ` |
+| RefArchGlobal | `product_faq` | `Product_FAQ` |
+| RefArchJapan | `product_faq` | `product faq` |
+
+#### Example 4: Complete Production Configuration
+
+**Scenario**: 5 sites with all features.
+
+```json
+{
+  "_defaults": {
+    "articleType": "Knowledge__kav",
+    "batchSize": 50,
+    "exportMode": "delta",
+    "publishArticles": false,
+    "enableDebugLogging": false,
+    "autoCreateFields": true,
+
+    "fieldMapping": {
+      "Title": "name",
+      "Summary": "pageDescription",
+      "Body__c": "custom.body",
+      "SFCC_External_ID__c": "ID",
+      "UrlName": "name",
+      "Author__c": "custom.author"
+    },
+
+    "transforms": {
+      "UrlName": "urlSafe:-",
+      "Summary": "lowercase"
+    },
+
+    "static": {
+      "Source__c": "SFCC",
+      "Platform__c": "B2C Commerce",
+      "Status__c": "Active"
+    },
+
+    "fieldMetadata": {
+      "Body__c": {
+        "type": "LongTextArea",
+        "length": 32000,
+        "visibleLines": 10,
+        "label": "Article Body"
+      },
+      "SFCC_External_ID__c": {
+        "type": "Text",
+        "length": 255,
+        "label": "SFCC External ID"
+      },
+      "Author__c": {
+        "type": "Text",
+        "length": 100,
+        "label": "Author"
+      }
+    }
+  },
+
+  "RefArch": {
+    "contentFolderIDs": ["us-faq", "us-help", "us-guides"],
+    "recordTypeName": "Product_FAQ",
+    "dataCategory": "Products:Electronics",
+    "static": {
+      "SubsidiaryID__c": 7,
+      "RegionCode__c": "US",
+      "LanguageCode__c": "en_US",
+      "Priority__c": 1
+    }
+  },
+
+  "RefArchGlobal": {
+    "contentFolderIDs": ["eu-faq", "eu-help"],
+    "recordTypeName": "Support_Article",
+    "dataCategory": "Support:International",
+    "batchSize": 100,
+    "transforms": {
+      "UrlName": "urlSafe:_"
+    },
+    "static": {
+      "SubsidiaryID__c": 12,
+      "RegionCode__c": "EU",
+      "LanguageCode__c": "en_GB",
+      "Priority__c": 2
+    }
+  },
+
+  "RefArchJapan": {
+    "contentFolderIDs": ["jp-faq"],
+    "recordTypeName": "Support_Article",
+    "dataCategory": "Support:Asia",
+    "transforms": {
+      "UrlName": "urlSafe:_"
+    },
+    "static": {
+      "SubsidiaryID__c": 15,
+      "RegionCode__c": "JP",
+      "LanguageCode__c": "ja_JP",
+      "Priority__c": 3
+    }
+  },
+
+  "RefArchCanada": {
+    "contentFolderIDs": ["ca-faq-en", "ca-faq-fr"],
+    "recordTypeName": "Product_FAQ",
+    "dataCategory": "Products:North_America",
+    "publishArticles": true,
+    "static": {
+      "SubsidiaryID__c": 8,
+      "RegionCode__c": "CA",
+      "Priority__c": 1
+    }
+  },
+
+  "SiteGenesis": {
+    "contentFolderIDs": ["sitegenesis"],
+    "enableDebugLogging": true,
+    "publishArticles": true,
+    "static": {
+      "SubsidiaryID__c": 1,
+      "RegionCode__c": "US",
+      "Status__c": "Testing"
+    }
+  }
+}
+```
+
+---
+
+### Getting Started with Multi-Site Configuration
+
+**Note**: As of v2.1+, `SiteConfigurations` JSON is the only supported configuration method. Individual parameters (ContentFolderID, ArticleType, etc.) have been removed for a cleaner, more maintainable approach.
+
+#### Step 1: Create Your Configuration JSON
+
+Start with a minimal configuration for your site:
+
+```json
+{
+  "_defaults": {
+    "articleType": "Knowledge__kav",
+    "fieldMapping": {
+      "Title": "name",
+      "Body__c": "custom.body",
+      "SFCC_External_ID__c": "ID",
+      "UrlName": "name"
+    },
+    "batchSize": 50,
+    "exportMode": "delta",
+    "publishArticles": false,
+    "autoCreateFields": true
+  },
+  "RefArch": {
+    "contentFolderIDs": ["root"]
+  }
+}
+```
+
+Replace `"RefArch"` with your actual Site ID from Business Manager.
+
+#### Step 2: Add to Job Configuration
+
+1. Navigate to: `Administration > Operations > Jobs > [Your Job]`
+2. Click **Job Steps** tab
+3. Find `SiteConfigurations` parameter
+4. Paste your JSON configuration
+5. Click **Apply**
+
+#### Step 3: Test
+
+1. Run job manually
+2. Check logs: `Administration > Operations > System Log Files`
+3. Look for: `"Current site: RefArch"` and configuration details
+4. Verify articles created in Salesforce
+
+#### Step 4: Add More Sites (Optional)
+
+Add additional site configurations as needed:
+
+```json
+{
+  "_defaults": { ... },
+  "RefArch": { ... },
+  "RefArchGlobal": { ... },
+  "SiteGenesis": { ... }
+}
+```
+
+---
+
+### Troubleshooting Multi-Site Configuration
+
+#### Issue: "Failed to parse SiteConfigurations JSON"
+
+**Cause**: Invalid JSON syntax
+
+**Solution**: Validate JSON using online validator (jsonlint.com)
+
+**Common Mistakes**:
+- Missing comma between properties
+- Trailing comma after last property
+- Unescaped quotes in values
+- Missing closing brace
+
+#### Issue: "Configuration not found for site: RefArch"
+
+**Cause**: Site ID doesn't match configured sites
+
+**Solution**: Check Site ID in Business Manager:
+```
+Administration > Sites > Manage Sites > [Site] > ID
+```
+
+Ensure JSON has matching key:
+```json
+{
+  "_defaults": {...},
+  "RefArch": {...}  // Must match Site ID exactly
+}
+```
+
+#### Issue: "Record Type 'Product_FAQ' not found"
+
+**Cause**: Record Type doesn't exist or DeveloperName is wrong
+
+**Solution**: Verify in Salesforce:
+1. Navigate to: Setup > Object Manager > Knowledge > Record Types
+2. Find your Record Type
+3. Use the **API Name** (DeveloperName), not the Label
+
+**Example**:
+- Label: "Product FAQ" ❌
+- API Name: "Product_FAQ" ✅
+
+#### Issue: Transforms not applying
+
+**Cause**: Transform field not in fieldMapping
+
+**Solution**: Ensure field is mapped first:
+
+```json
+{
+  "fieldMapping": {
+    "UrlName": "name"  // ✅ Field must be mapped
+  },
+  "transforms": {
+    "UrlName": "urlSafe:-"  // ✅ Then transform can be applied
+  }
+}
+```
+
+#### Issue: Static fields not appearing
+
+**Cause**: Field doesn't exist in Salesforce
+
+**Solution**:
+1. Enable `autoCreateFields: true`
+2. Add field metadata for static fields
+3. Or manually create fields in Salesforce
+
+---
+
+### Best Practices
+
+#### 1. Use _defaults for Common Settings
+
+✅ **Good**:
+```json
+{
+  "_defaults": {
+    "fieldMapping": {...},  // Define once
+    "transforms": {...}
+  },
+  "RefArch": { "static": {...} },
+  "RefArchGlobal": { "static": {...} }
+}
+```
+
+❌ **Bad** (Repetitive):
+```json
+{
+  "RefArch": {
+    "fieldMapping": {...},  // Duplicated
+    "transforms": {...}
+  },
+  "RefArchGlobal": {
+    "fieldMapping": {...},  // Duplicated again
+    "transforms": {...}
+  }
+}
+```
+
+#### 2. Use Meaningful Static Field Values
+
+```json
+"static": {
+  "Source__c": "SFCC",  // ✅ Clear system identifier
+  "SubsidiaryID__c": 7,  // ✅ Meaningful ID
+  "RegionCode__c": "US"  // ✅ Standard region code
+}
+```
+
+#### 3. Test with Debug Logging First
+
+```json
+{
+  "RefArch": {
+    "enableDebugLogging": true,  // Test with debug ON
+    "publishArticles": false      // Keep as draft during testing
+  }
+}
+```
+
+Then disable debug and enable publish for production:
+
+```json
+{
+  "RefArch": {
+    "enableDebugLogging": false,
+    "publishArticles": false  // Or true for auto-publish
+  }
+}
+```
+
+#### 4. Version Control Your Configuration
+
+Save configuration JSON in version control (Git) with comments:
+
+```json
+{
+  "_comment": "Updated 2024-02-16: Added Japan site",
+  "_defaults": {...},
+  "RefArchJapan": {...}
+}
+```
+
+#### 5. Use Delta Mode for Performance
+
+```json
+{
+  "_defaults": {
+    "exportMode": "delta"  // Only sync changed content
+  }
+}
+```
+
+Use `"full"` mode only for:
+- Initial migration
+- Recovery after failures
+- Testing
 
 ---
 
@@ -1375,6 +2277,15 @@ A: Currently, the Language field is hardcoded to `en_US`. You can modify `conten
 
 **Q: Can I use custom Knowledge Article types?**
 A: Yes! Set the `ArticleType` parameter to your custom article type (e.g., `Product_FAQ__kav`).
+
+**Q: Why are my articles not publishing automatically?**
+A: By default, `PublishArticles` is set to `false`, which keeps articles in draft status for manual review. To enable auto-publishing, set `PublishArticles: true` in your job configuration.
+
+**Q: I'm getting "TRANSLATIONALREADYEXIST" error when syncing. What does this mean?**
+A: This error occurred in earlier versions when a draft already existed but the system tried to create another one. **This has been fixed in version 2.0.0+**. The integration now intelligently searches for existing drafts first and updates them in-place, preventing duplicate draft creation. Make sure you're running the latest version.
+
+**Q: What happens when I sync the same content multiple times with PublishArticles: false?**
+A: The integration updates the existing draft in-place without creating new versions. This allows you to refine content through multiple sync cycles before manually publishing. Only when an Online (published) version exists and no draft exists will a new draft version be created.
 
 **Q: How do I know if sync metadata is working?**
 A: Check Content Assets in Business Manager > Merchant Tools > Content. Open any synced asset and look for the "Salesforce Knowledge Sync" attribute group.

@@ -12,74 +12,6 @@
                 "parameters": {
                     "parameter": [
                         {
-                            "@name": "ContentFolderID",
-                            "@type": "string",
-                            "@required": "false",
-                            "@trim": "true",
-                            "description": "Content folder ID to export (default: root for all content assets)",
-                            "default-value": "root"
-                        },
-                        {
-                            "@name": "BatchSize",
-                            "@type": "long",
-                            "@required": "false",
-                            "description": "Number of content assets to process in each batch (default: 50)",
-                            "default-value": "50"
-                        },
-                        {
-                            "@name": "ExportMode",
-                            "@type": "string",
-                            "@required": "false",
-                            "@trim": "true",
-                            "description": "Export mode: 'delta' (only modified since last sync) or 'full' (all content). Delta mode checks lastModified > sfLastSyncDateTime (default: delta)",
-                            "default-value": "delta"
-                        },
-                        {
-                            "@name": "ArticleType",
-                            "@type": "string",
-                            "@required": "false",
-                            "@trim": "true",
-                            "description": "Salesforce Knowledge Article Type API Name (default: Knowledge__kav)",
-                            "default-value": "Knowledge__kav"
-                        },
-                        {
-                            "@name": "FieldMapping",
-                            "@type": "string",
-                            "@required": "false",
-                            "@trim": "true",
-                            "description": "JSON field mapping from Salesforce to B2C fields",
-                            "default-value": "{\"Title\":\"name\",\"Summary\":\"pageDescription\",\"Body__c\":\"custom.body\",\"SFCC_External_ID__c\":\"ID\",\"UrlName\":\"ID\"}"
-                        },
-                        {
-                            "@name": "DataCategory",
-                            "@type": "string",
-                            "@required": "false",
-                            "@trim": "true",
-                            "description": "Optional Salesforce Knowledge data category (e.g., Products:Electronics)"
-                        },
-                        {
-                            "@name": "AutoCreateFields",
-                            "@type": "boolean",
-                            "@required": "false",
-                            "description": "Automatically create missing custom fields in Salesforce Knowledge (default: false)",
-                            "default-value": "false"
-                        },
-                        {
-                            "@name": "FieldMetadata",
-                            "@type": "string",
-                            "@required": "false",
-                            "@trim": "true",
-                            "description": "JSON metadata for custom fields to create (field name to metadata mapping)",
-                            "default-value": "{\"Body__c\":{\"type\":\"LongTextArea\",\"length\":32000,\"visibleLines\":10,\"label\":\"Article Body\",\"description\":\"Rich text content from B2C Commerce\"},\"SFCC_External_ID__c\":{\"type\":\"Text\",\"length\":255,\"label\":\"SFCC External ID\",\"description\":\"Salesforce Commerce Cloud B2C content asset ID for synchronization\"}}"
-                        },
-                        {
-                            "@name": "EnableDebugLogging",
-                            "@type": "boolean",
-                            "@required": "false",
-                            "description": "Enable detailed debug logging to see raw B2C content, field mappings, and Salesforce API payloads (default: false)",
-                            "default-value": "false"
-                        },
-                        {
                             "@name": "ServiceID",
                             "@type": "string",
                             "@required": "false",
@@ -88,11 +20,12 @@
                             "default-value": "salesforce.oauth"
                         },
                         {
-                            "@name": "PublishArticles",
-                            "@type": "boolean",
+                            "@name": "SiteConfigurations",
+                            "@type": "string",
                             "@required": "false",
-                            "description": "Automatically publish articles after creation/update. If false, articles remain in draft status for manual review (default: false)",
-                            "default-value": "false"
+                            "@trim": "true",
+                            "description": "Multi-site configuration JSON with _defaults inheritance. See README for full documentation.",
+                            "default-value": "{\"_defaults\":{\"articleType\":\"Knowledge__kav\",\"recordTypeName\":\"Knowledge\",\"fieldMapping\":{\"Title\":\"name\",\"Body__c\":\"custom.body\",\"SFCC_External_ID__c\":\"ID\",\"UrlName\":\"name\"},\"transforms\":{\"UrlName\":\"urlSafe:-\"},\"batchSize\":50,\"exportMode\":\"full\",\"publishArticles\":false,\"autoCreateFields\":true,\"fieldMetadata\":{\"Site__c\":{\"label\":\"Site\",\"type\":\"Text\",\"length\":80}}},\"RefArch\":{\"contentFolderIDs\":[\"root\"],\"static\":{\"Site__c\":\"RefArch\"}},\"RefArchGlobal\":{\"contentFolderIDs\":[\"root\"],\"static\":{\"Site__c\":\"RefArchGlobal\"}}}"
                         }
                     ]
                 },
