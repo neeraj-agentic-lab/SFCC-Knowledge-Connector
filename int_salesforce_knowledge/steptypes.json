@@ -86,6 +86,13 @@
                             "@trim": "true",
                             "description": "Salesforce service ID from Administration > Operations > Services (default: salesforce.oauth)",
                             "default-value": "salesforce.oauth"
+                        },
+                        {
+                            "@name": "PublishArticles",
+                            "@type": "boolean",
+                            "@required": "false",
+                            "description": "Automatically publish articles after creation/update. If false, articles remain in draft status for manual review (default: false)",
+                            "default-value": "false"
                         }
                     ]
                 },

@@ -70,6 +70,7 @@ function upsertKnowledgeArticle(contentAsset, config) {
         var fieldMappingJSON = (config && config.fieldMapping) || '{}';
         var dataCategory = (config && config.dataCategory) || null;
         var enableDebugLogging = (config && config.enableDebugLogging) || false;
+        var publishArticles = (config && config.publishArticles) || false;
         var serviceID = (config && config.serviceID) || null;
 
         // Validate serviceID is provided
@@ -143,6 +144,7 @@ function upsertKnowledgeArticle(contentAsset, config) {
                 updateData,
                 articleType,
                 enableDebugLogging,
+                publishArticles,
                 serviceID
             );
         } else {
@@ -169,6 +171,7 @@ function upsertKnowledgeArticle(contentAsset, config) {
                 createData,
                 articleType,
                 enableDebugLogging,
+                publishArticles,
                 serviceID
             );
         }
@@ -195,7 +198,12 @@ function upsertKnowledgeArticle(contentAsset, config) {
  *
  * Queries Salesforce for articles matching the B2C Content Asset ID.
  * Uses KnowledgeArticleId as the stable reference across versions.
- * Checks all publish statuses (Online, Draft, etc.).
+ * IMPORTANT: Prioritizes Draft versions over Online versions to avoid duplicate draft creation.
+ *
+ * Strategy:
+ * 1. First search for Draft version (if exists, use it for updates)
+ * 2. If no Draft, search for Online version (will need to create draft from it)
+ * 3. This prevents "TRANSLATIONALREADYEXIST" error when draft already exists
  *
  * @param {string} accessToken - OAuth access token
  * @param {string} instanceUrl - Salesforce instance URL
@@ -211,49 +219,99 @@ function findArticleByExternalId(accessToken, instanceUrl, externalId, articleTy
     logger.debug('Searching for existing article with SFCC_External_ID__c: ' + externalId);
 
     try {
-        // Build SOQL query - search across all publish statuses, order by PublishStatus to prefer Draft
         var escapedId = externalId.replace(/'/g, "\\'");
-        var query = "SELECT Id, KnowledgeArticleId, Title, " + EXTERNAL_ID_FIELD + ", PublishStatus, VersionNumber " +
-            "FROM " + articleType +
-            " WHERE " + EXTERNAL_ID_FIELD + " = '" + escapedId + "' " +
-            "ORDER BY PublishStatus DESC LIMIT 1";
-
-        var endpoint = '/query?q=' + encodeURIComponent(query);
-
-        logger.debug('Query: ' + query);
-
-        // Call Knowledge API service
         var service = services.getKnowledgeService(serviceID);
         if (!service) {
             logger.error('Knowledge API service not found for serviceID: ' + serviceID);
             return null;
         }
 
-        var result = service.call({
+        // STEP 1: First, search for Draft version (highest priority)
+        var draftQuery = "SELECT Id, KnowledgeArticleId, Title, " + EXTERNAL_ID_FIELD + ", PublishStatus, VersionNumber " +
+            "FROM " + articleType +
+            " WHERE " + EXTERNAL_ID_FIELD + " = '" + escapedId + "' " +
+            "AND PublishStatus = 'Draft' " +
+            "ORDER BY VersionNumber DESC LIMIT 1";
+
+        logger.debug('Query (Draft): ' + draftQuery);
+
+        var draftResult = service.call({
             accessToken: accessToken,
             instanceUrl: instanceUrl,
-            endpoint: endpoint,
+            endpoint: '/query?q=' + encodeURIComponent(draftQuery),
             method: 'GET',
             body: {}
         });
 
-        // Process result
-        if (result.status === 'OK' && result.object && result.object.success) {
-            var records = result.object.data.records;
+        if (draftResult.status === 'OK' && draftResult.object && draftResult.object.success) {
+            var draftRecords = draftResult.object.data.records;
 
-            if (records && records.length > 0) {
-                var article = records[0];
-                logger.info('Found existing article: Id=' + article.Id + ', KnowledgeArticleId=' + article.KnowledgeArticleId + ', PublishStatus=' + article.PublishStatus);
-                return article;
-            } else {
-                logger.debug('No existing article found with SFCC_External_ID__c: ' + externalId);
-                return null;
+            if (draftRecords && draftRecords.length > 0) {
+                var draftArticle = draftRecords[0];
+                logger.info('Found existing DRAFT article: Id=' + draftArticle.Id + ', KnowledgeArticleId=' + draftArticle.KnowledgeArticleId + ', PublishStatus=' + draftArticle.PublishStatus);
+                return draftArticle;
             }
-        } else {
-            var errorMsg = result.object ? result.object.errorMessage : (result.errorMessage || 'Query failed');
-            logger.error('Article search failed: ' + errorMsg);
-            return null;
         }
+
+        // STEP 2: No Draft found, search for Online version
+        logger.debug('No draft found, searching for Online version');
+
+        var onlineQuery = "SELECT Id, KnowledgeArticleId, Title, " + EXTERNAL_ID_FIELD + ", PublishStatus, VersionNumber " +
+            "FROM " + articleType +
+            " WHERE " + EXTERNAL_ID_FIELD + " = '" + escapedId + "' " +
+            "AND PublishStatus = 'Online' " +
+            "ORDER BY VersionNumber DESC LIMIT 1";
+
+        logger.debug('Query (Online): ' + onlineQuery);
+
+        var onlineResult = service.call({
+            accessToken: accessToken,
+            instanceUrl: instanceUrl,
+            endpoint: '/query?q=' + encodeURIComponent(onlineQuery),
+            method: 'GET',
+            body: {}
+        });
+
+        if (onlineResult.status === 'OK' && onlineResult.object && onlineResult.object.success) {
+            var onlineRecords = onlineResult.object.data.records;
+
+            if (onlineRecords && onlineRecords.length > 0) {
+                var onlineArticle = onlineRecords[0];
+                logger.info('Found existing ONLINE article: Id=' + onlineArticle.Id + ', KnowledgeArticleId=' + onlineArticle.KnowledgeArticleId + ', PublishStatus=' + onlineArticle.PublishStatus);
+                return onlineArticle;
+            }
+        }
+
+        // STEP 3: No Draft or Online found, try Archived or other statuses
+        logger.debug('No draft or online found, searching all statuses');
+
+        var allQuery = "SELECT Id, KnowledgeArticleId, Title, " + EXTERNAL_ID_FIELD + ", PublishStatus, VersionNumber " +
+            "FROM " + articleType +
+            " WHERE " + EXTERNAL_ID_FIELD + " = '" + escapedId + "' " +
+            "ORDER BY VersionNumber DESC LIMIT 1";
+
+        logger.debug('Query (All): ' + allQuery);
+
+        var allResult = service.call({
+            accessToken: accessToken,
+            instanceUrl: instanceUrl,
+            endpoint: '/query?q=' + encodeURIComponent(allQuery),
+            method: 'GET',
+            body: {}
+        });
+
+        if (allResult.status === 'OK' && allResult.object && allResult.object.success) {
+            var allRecords = allResult.object.data.records;
+
+            if (allRecords && allRecords.length > 0) {
+                var article = allRecords[0];
+                logger.info('Found existing article (other status): Id=' + article.Id + ', KnowledgeArticleId=' + article.KnowledgeArticleId + ', PublishStatus=' + article.PublishStatus);
+                return article;
+            }
+        }
+
+        logger.debug('No existing article found with SFCC_External_ID__c: ' + externalId);
+        return null;
 
     } catch (e) {
         logger.error('Exception searching for article: ' + e.message);
@@ -267,7 +325,7 @@ function findArticleByExternalId(accessToken, instanceUrl, externalId, articleTy
  * Handles Knowledge versioning:
  * - If Online (Published): Creates draft via editOnlineArticle REST API
  * - If Draft: Updates draft directly
- * Then publishes the updated draft.
+ * Then optionally publishes the updated draft based on publishArticles flag.
  *
  * @param {string} accessToken - OAuth access token
  * @param {string} instanceUrl - Salesforce instance URL
@@ -275,10 +333,11 @@ function findArticleByExternalId(accessToken, instanceUrl, externalId, articleTy
  * @param {Object} articleData - Article data to update
  * @param {string} articleType - Knowledge Article Type
  * @param {boolean} enableDebugLogging - Enable debug logging
+ * @param {boolean} publishArticles - Whether to publish the article (true) or keep as draft (false)
  * @param {string} serviceID - Service ID for Salesforce API
  * @returns {Object} Update result
  */
-function updateArticleWithVersioning(accessToken, instanceUrl, existingArticle, articleData, articleType, enableDebugLogging, serviceID) {
+function updateArticleWithVersioning(accessToken, instanceUrl, existingArticle, articleData, articleType, enableDebugLogging, publishArticles, serviceID) {
     logger.info('Updating article with versioning: KnowledgeArticleId=' + existingArticle.KnowledgeArticleId + ', PublishStatus=' + existingArticle.PublishStatus);
 
     try {
@@ -353,31 +412,43 @@ function updateArticleWithVersioning(accessToken, instanceUrl, existingArticle, 
 
         logger.info('Successfully updated draft article: ' + draftId);
 
-        // Publish the draft using version ID
-        var publishResult = publishArticle(accessToken, instanceUrl, draftId, serviceID);
+        // Conditionally publish the draft based on publishArticles flag
+        if (publishArticles) {
+            logger.info('PublishArticles is enabled, publishing article');
+            var publishResult = publishArticle(accessToken, instanceUrl, draftId, serviceID);
 
-        if (!publishResult.success) {
-            logger.warn('Article updated but publish failed: ' + publishResult.error);
-            // Return success anyway since the draft was updated
+            if (!publishResult.success) {
+                logger.warn('Article updated but publish failed: ' + publishResult.error);
+                // Return success anyway since the draft was updated
+                return {
+                    success: true,
+                    knowledgeArticleId: existingArticle.KnowledgeArticleId,
+                    versionId: draftId,
+                    operation: 'update',
+                    publishStatus: 'draft',
+                    warning: 'Publish failed: ' + publishResult.error
+                };
+            }
+
+            logger.info('Successfully published article: ' + existingArticle.KnowledgeArticleId);
+
             return {
                 success: true,
                 knowledgeArticleId: existingArticle.KnowledgeArticleId,
                 versionId: draftId,
                 operation: 'update',
-                publishStatus: 'draft',
-                warning: 'Published failed: ' + publishResult.error
+                publishStatus: 'online'
+            };
+        } else {
+            logger.info('PublishArticles is disabled, article will remain in draft status');
+            return {
+                success: true,
+                knowledgeArticleId: existingArticle.KnowledgeArticleId,
+                versionId: draftId,
+                operation: 'update',
+                publishStatus: 'draft'
             };
         }
-
-        logger.info('Successfully published article: ' + existingArticle.KnowledgeArticleId);
-
-        return {
-            success: true,
-            knowledgeArticleId: existingArticle.KnowledgeArticleId,
-            versionId: draftId,
-            operation: 'update',
-            publishStatus: 'online'
-        };
 
     } catch (e) {
         logger.error('Exception updating article with versioning: ' + e.message);
@@ -392,17 +463,18 @@ function updateArticleWithVersioning(accessToken, instanceUrl, existingArticle, 
 /**
  * Create New Knowledge Article
  *
- * Creates a new Knowledge article in Draft status, then publishes it.
+ * Creates a new Knowledge article in Draft status, then optionally publishes it based on publishArticles flag.
  *
  * @param {string} accessToken - OAuth access token
  * @param {string} instanceUrl - Salesforce instance URL
  * @param {Object} articleData - Article data
  * @param {string} articleType - Knowledge Article Type
  * @param {boolean} enableDebugLogging - Enable debug logging
+ * @param {boolean} publishArticles - Whether to publish the article (true) or keep as draft (false)
  * @param {string} serviceID - Service ID for Salesforce API
  * @returns {Object} Create result
  */
-function createArticle(accessToken, instanceUrl, articleData, articleType, enableDebugLogging, serviceID) {
+function createArticle(accessToken, instanceUrl, articleData, articleType, enableDebugLogging, publishArticles, serviceID) {
     logger.info('Creating new Knowledge article');
 
     try {
@@ -482,30 +554,42 @@ function createArticle(accessToken, instanceUrl, articleData, articleType, enabl
                 }
             }
 
-            // Publish the article using version ID
-            var publishResult = publishArticle(accessToken, instanceUrl, articleId, serviceID);
+            // Conditionally publish the article based on publishArticles flag
+            if (publishArticles) {
+                logger.info('PublishArticles is enabled, publishing article');
+                var publishResult = publishArticle(accessToken, instanceUrl, articleId, serviceID);
 
-            if (!publishResult.success) {
-                logger.warn('Article created but publish failed: ' + publishResult.error);
+                if (!publishResult.success) {
+                    logger.warn('Article created but publish failed: ' + publishResult.error);
+                    return {
+                        success: true,
+                        knowledgeArticleId: knowledgeArticleId,
+                        versionId: articleId,
+                        operation: 'create',
+                        publishStatus: 'draft',
+                        warning: 'Publish failed: ' + publishResult.error
+                    };
+                }
+
+                logger.info('Successfully published new article: ' + knowledgeArticleId);
+
                 return {
                     success: true,
                     knowledgeArticleId: knowledgeArticleId,
                     versionId: articleId,
                     operation: 'create',
-                    publishStatus: 'draft',
-                    warning: 'Publish failed: ' + publishResult.error
+                    publishStatus: 'online'
+                };
+            } else {
+                logger.info('PublishArticles is disabled, article will remain in draft status');
+                return {
+                    success: true,
+                    knowledgeArticleId: knowledgeArticleId,
+                    versionId: articleId,
+                    operation: 'create',
+                    publishStatus: 'draft'
                 };
             }
-
-            logger.info('Successfully published new article: ' + knowledgeArticleId);
-
-            return {
-                success: true,
-                knowledgeArticleId: knowledgeArticleId,
-                versionId: articleId,
-                operation: 'create',
-                publishStatus: 'online'
-            };
         } else {
             var errorMsg = result.object ? result.object.errorMessage : (result.errorMessage || 'Create failed');
             logger.error('Article creation failed: ' + errorMsg);

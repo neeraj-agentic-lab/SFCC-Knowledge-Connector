@@ -9,12 +9,15 @@
  * Job Parameters:
  * - ContentFolderID (optional): Specific folder to export (default: 'root' for all content)
  * - BatchSize (optional): Number of assets per batch (default: 50)
- * - ExportMode (optional): 'full' or 'incremental' (default: full)
+ * - ExportMode (optional): 'full' or 'delta' (default: delta)
  * - ArticleType (optional): Knowledge Article Type API Name (default: Knowledge__kav)
  * - FieldMapping (optional): JSON field mapping (default: standard mapping)
  * - DataCategory (optional): Salesforce Knowledge data category
  * - AutoCreateFields (optional): Automatically create missing custom fields (default: false)
  * - FieldMetadata (optional): JSON metadata for custom fields to create (default: {})
+ * - PublishArticles (optional): Auto-publish articles after creation/update (default: false)
+ * - EnableDebugLogging (optional): Enable detailed debug logging (default: false)
+ * - ServiceID (optional): Salesforce service ID (default: salesforce.oauth)
  *
  * Configuration Examples:
  *
@@ -149,6 +152,7 @@ exports.execute = function (parameters, stepExecution) {
         var autoCreateFields = parameters.AutoCreateFields || false;
         var fieldMetadata = parameters.FieldMetadata || '{}';
         var enableDebugLogging = parameters.EnableDebugLogging || false;
+        var publishArticles = parameters.PublishArticles || false;
         // Note: serviceID was already read in Step 1 for validation
 
         logger.info('Job Parameters:');
@@ -161,6 +165,7 @@ exports.execute = function (parameters, stepExecution) {
         logger.info('  - Auto Create Fields: ' + autoCreateFields);
         logger.info('  - Field Metadata: ' + fieldMetadata);
         logger.info('  - Enable Debug Logging: ' + enableDebugLogging);
+        logger.info('  - Publish Articles: ' + publishArticles);
         logger.info('  - Service ID: ' + serviceID);
 
         // Build configuration object to pass to helpers
@@ -169,6 +174,7 @@ exports.execute = function (parameters, stepExecution) {
             fieldMapping: fieldMapping,
             dataCategory: dataCategory,
             enableDebugLogging: enableDebugLogging,
+            publishArticles: publishArticles,
             serviceID: serviceID
         };
 
