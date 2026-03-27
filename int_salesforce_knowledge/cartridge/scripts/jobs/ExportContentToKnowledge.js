@@ -218,6 +218,37 @@ exports.execute = function (parameters, stepExecution) {
         logger.info('Found ' + contentAssets.length + ' content assets to export');
 
         // ========================================
+        // 3.5. DISCOVER AVAILABLE LANGUAGES (v2.2+)
+        // ========================================
+        logger.info('Step 3.5: Discovering available languages for site');
+
+        var languageHelper = require('int_salesforce_knowledge/cartridge/scripts/helpers/languageHelper');
+
+        // Get all available locales for the site
+        var availableLocales = languageHelper.getAvailableLocalesForSite();
+        logger.info('Site has ' + availableLocales.length + ' enabled locales: ' + availableLocales.join(', '));
+
+        // Filter locales based on configuration
+        var targetLocales = languageHelper.filterLocales(availableLocales, config);
+        logger.info('Target locales after filtering: ' + targetLocales.length + ' - ' + targetLocales.join(', '));
+
+        // Determine master language (default to first available locale if not configured)
+        var masterLanguage = config.masterLanguage || 'en_US';
+        if (targetLocales.indexOf(masterLanguage) === -1) {
+            logger.warn('Master language ' + masterLanguage + ' not in available locales, using first locale: ' + targetLocales[0]);
+            masterLanguage = targetLocales.length > 0 ? targetLocales[0] : 'en_US';
+        }
+
+        logger.info('Master language: ' + masterLanguage);
+
+        // Add language info to config for downstream processing
+        config.masterLanguage = masterLanguage;
+        config.targetLocales = targetLocales;
+
+        // Log language discovery summary
+        languageHelper.logLanguageDiscovery(availableLocales, targetLocales, masterLanguage);
+
+        // ========================================
         // 4. AUTHENTICATE WITH SALESFORCE
         // ========================================
         logger.info('Step 4: Authenticating with Salesforce');
@@ -318,15 +349,138 @@ exports.execute = function (parameters, stepExecution) {
         logger.info('Field validation completed successfully');
 
         // ========================================
-        // 5. EXPORT ARTICLES IN BATCHES
+        // 4.6. VALIDATE DATA CATEGORIES (IF CONFIGURED)
         // ========================================
-        logger.info('Step 5: Exporting articles to Salesforce Knowledge');
+        var validateDataCategories = (config.validateDataCategories !== undefined) ? config.validateDataCategories : true;
+
+        if (validateDataCategories && config.dataCategories) {
+            logger.info('Step 4.6: Validating data categories');
+
+            var dataCategoryHelper = require('int_salesforce_knowledge/cartridge/scripts/helpers/salesforceDataCategoryHelper');
+
+            // Collect all unique data categories from config + content
+            logger.info('Collecting data categories from site config and content assets');
+            var allDataCategories = dataCategoryHelper.collectAllDataCategories(config, contentAssets);
+
+            if (allDataCategories && Object.keys(allDataCategories).length > 0) {
+                var totalCategories = 0;
+                for (var groupName in allDataCategories) {
+                    if (allDataCategories.hasOwnProperty(groupName)) {
+                        totalCategories += allDataCategories[groupName].length;
+                        logger.info('  - Group "' + groupName + '": ' + allDataCategories[groupName].join(', '));
+                    }
+                }
+
+                logger.info('Found ' + totalCategories + ' unique categor(ies) to validate across ' + Object.keys(allDataCategories).length + ' group(s)');
+
+                // Validate against Salesforce
+                var categoryValidationResult = dataCategoryHelper.validateDataCategories(
+                    authResult.accessToken,
+                    authResult.instanceUrl,
+                    allDataCategories,
+                    serviceID,
+                    config.articleType
+                );
+
+                if (!categoryValidationResult.valid) {
+                    logger.error('');
+                    logger.error('Data category validation FAILED:');
+
+                    categoryValidationResult.errors.forEach(function (error) {
+                        logger.error('  - ' + error);
+                    });
+
+                    // Log available valid categories for each failed group
+                    for (var failedGroup in categoryValidationResult.details) {
+                        if (categoryValidationResult.details.hasOwnProperty(failedGroup)) {
+                            var groupDetails = categoryValidationResult.details[failedGroup];
+                            if (!groupDetails.valid && groupDetails.validCategories.length > 0) {
+                                logger.error('');
+                                logger.error('Valid categories in group "' + failedGroup + '":');
+                                groupDetails.validCategories.forEach(function (validCat) {
+                                    logger.error('  - ' + validCat);
+                                });
+                            }
+                        }
+                    }
+
+                    logger.error('');
+                    logger.error('Job execution stopped. Please fix the data category configuration and try again.');
+
+                    return new Status(
+                        Status.ERROR,
+                        'ERROR',
+                        'Data category validation failed. See logs for details.'
+                    );
+                }
+
+                logger.info('All data categories validated successfully');
+            } else {
+                logger.info('No data categories found to validate');
+            }
+        } else if (config.dataCategories) {
+            logger.info('Step 4.6: Data category validation disabled (validateDataCategories: false)');
+        } else {
+            logger.info('Step 4.6: No data categories configured, skipping validation');
+        }
+
+        // ========================================
+        // 5. EXPORT ARTICLES IN BATCHES (MULTI-LANGUAGE)
+        // ========================================
+        logger.info('Step 5: Exporting articles to Salesforce Knowledge (multi-language)');
 
         var syncMetadataUpdates = 0;
         var syncMetadataErrors = 0;
 
+        // Expand content assets to include all language versions
+        logger.info('Step 5.1: Expanding content assets to include all language versions');
+
+        var contentAssetsWithLanguages = [];
+        var originalContentCount = contentAssets.length;
+
+        for (var i = 0; i < contentAssets.length; i++) {
+            var contentAsset = contentAssets[i];
+
+            // Get all language versions for this content
+            var languageVersions = contentMappingHelper.getContentWithAllLanguages(
+                contentAsset.ID,
+                targetLocales,
+                config.enableDebugLogging || false
+            );
+
+            if (languageVersions.length === 0) {
+                logger.warn('Content ' + contentAsset.ID + ' not available in any target language, skipping');
+                continue;
+            }
+
+            // Sort so master language is first
+            languageVersions.sort(function (a, b) {
+                if (a.language === masterLanguage) return -1;
+                if (b.language === masterLanguage) return 1;
+                return 0;
+            });
+
+            // Add all language versions to the batch
+            for (var j = 0; j < languageVersions.length; j++) {
+                contentAssetsWithLanguages.push(languageVersions[j]);
+            }
+        }
+
+        logger.info('Original content assets: ' + originalContentCount);
+        logger.info('Total content assets with languages: ' + contentAssetsWithLanguages.length);
+        logger.info('Average languages per content: ' + (contentAssetsWithLanguages.length / originalContentCount).toFixed(2));
+
+        if (contentAssetsWithLanguages.length === 0) {
+            logger.warn('No content assets with language versions found');
+            logger.info('Job completed: No content to export');
+            return new Status(Status.OK, 'OK', 'No content assets with language versions found');
+        }
+
+        // Process the expanded list with language versions
+        logger.info('Step 5.2: Processing content in batches');
+
         var exportResult = contentMappingHelper.exportToExternalAPI(
-            contentAssets,
+            contentAssetsWithLanguages,
             batchSize,
             function (batch) {
                 // Export batch to Salesforce Knowledge
@@ -341,18 +495,22 @@ exports.execute = function (parameters, stepExecution) {
 
                         // Only update metadata for successful exports
                         if (detail.success && detail.knowledgeArticleId && detail.versionId) {
+                            // Get language from batch item
+                            var language = batch[i].language || masterLanguage;
+
                             var updateResult = contentMappingHelper.updateSyncMetadata(
                                 detail.contentId,
                                 detail.knowledgeArticleId,
-                                detail.versionId
+                                detail.versionId,
+                                language  // Pass language parameter (v2.2+)
                             );
 
                             if (updateResult.success) {
                                 syncMetadataUpdates++;
-                                logger.debug('Updated sync metadata for content: ' + detail.contentId);
+                                logger.debug('Updated sync metadata for: ' + detail.contentId + ' (Language: ' + language + ')');
                             } else {
                                 syncMetadataErrors++;
-                                logger.warn('Failed to update sync metadata for content ' + detail.contentId + ': ' + updateResult.error);
+                                logger.warn('Failed to update sync metadata for ' + detail.contentId + ': ' + updateResult.error);
                             }
                         }
                     }
@@ -377,7 +535,11 @@ exports.execute = function (parameters, stepExecution) {
         logger.info('=======================================================');
         logger.info('Summary:');
         logger.info('  - Export Mode: ' + exportMode);
-        logger.info('  - Total Content Assets: ' + contentAssets.length);
+        logger.info('  - Original Content Assets: ' + originalContentCount);
+        logger.info('  - Target Languages: ' + targetLocales.length + ' (' + targetLocales.join(', ') + ')');
+        logger.info('  - Master Language: ' + masterLanguage);
+        logger.info('  - Total Content with Languages: ' + contentAssetsWithLanguages.length);
+        logger.info('  - Average Languages per Content: ' + (contentAssetsWithLanguages.length / originalContentCount).toFixed(2));
         logger.info('  - Total Processed: ' + exportResult.totalProcessed);
         logger.info('  - Successful Exports: ' + exportResult.totalSuccess);
         logger.info('  - Failed Exports: ' + exportResult.totalFailed);

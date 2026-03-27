@@ -42,6 +42,13 @@ A powerful, production-ready Salesforce Commerce Cloud (SFCC) B2C Commerce cartr
   - [Migration Guide](#migration-from-single-site-to-multi-site)
   - [Troubleshooting](#troubleshooting-multi-site-configuration)
   - [Best Practices](#best-practices)
+- [Data Category Management](#-data-category-management)
+  - [Configuration](#data-category-configuration)
+  - [Content-Level Overrides](#content-level-category-overrides)
+  - [Validation](#upfront-validation)
+  - [Existing Articles](#assigning-categories-to-existing-articles)
+  - [Examples](#data-category-examples)
+  - [Troubleshooting](#troubleshooting-data-categories)
 - [Incremental Sync](#incremental-sync)
 - [Field Mapping](#field-mapping)
 - [Automatic Field Creation](#automatic-field-creation)
@@ -370,7 +377,8 @@ Click "Run Now" or schedule for automated sync
 | **🎨 Flexible Mapping** | JSON-based field mapping with nested property support | Map any B2C field to any SF field |
 | **🖼️ MarkupText Support** | Properly handles SFCC MarkupText objects | Rich HTML content syncs correctly |
 | **📑 Multiple Article Types** | Works with standard and custom Knowledge Article types | Supports custom implementations |
-| **🏷️ Data Categories** | Assigns articles to Knowledge data categories | Organized knowledge base |
+| **🏷️ Data Categories** | Content-level overrides, site defaults, upfront validation | Hierarchical categories with multiple groups |
+| **🔄 Category Auto-Assignment** | Assigns categories to new and existing articles | Uses Knowledge__DataCategorySelection API |
 | **🐛 Debug Mode** | Comprehensive logging of raw data, mappings, API payloads | Troubleshooting made easy |
 | **⚙️ Configurable Services** | Dynamic service ID for multi-org support | Works with multiple SF orgs |
 
@@ -1394,6 +1402,343 @@ Add additional site configurations as needed:
 
 ---
 
+### Multi-Language Support (v2.2+)
+
+**Overview**: The integration automatically discovers and syncs content in all languages it exists in. When B2C Commerce content exists in multiple locales (e.g., en_US, es, fr), all language versions are automatically synced to Salesforce Knowledge as linked translation articles.
+
+#### How Multi-Language Works
+
+**Content-Driven Auto-Discovery**:
+1. Integration detects all enabled locales from `Site.getAllowedLocales()`
+2. For each content asset, checks which languages it actually exists in
+3. Syncs master language first (creates Knowledge Article)
+4. Creates translation versions linked by same `KnowledgeArticleId`
+
+**Salesforce Knowledge Structure**:
+
+```
+Content "FAQ-001" exists in: en_US, es, fr
+
+Salesforce Result:
+┌─────────────────────────────────────────┐
+│ Master Article (en_US)                  │
+│ - KnowledgeArticleId: kA0xx000000001   │  ← Shared ID
+│ - SFCC_External_ID__c: FAQ-001         │  ← Shared External ID
+│ - Language: en_US                       │
+└─────────────────────────────────────────┘
+         │
+         ├─→ Translation (es)
+         │   - KnowledgeArticleId: kA0xx000000001 (same)
+         │   - SFCC_External_ID__c: FAQ-001 (same)
+         │   - Language: es
+         │
+         └─→ Translation (fr)
+             - KnowledgeArticleId: kA0xx000000001 (same)
+             - SFCC_External_ID__c: FAQ-001 (same)
+             - Language: fr
+```
+
+#### Language Configuration Options
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `masterLanguage` | String | `"en_US"` | Primary language to sync first |
+| `languageMode` | String | `"auto"` | `"auto"` = discover from content, `"configured"` = use languages array |
+| `languages` | Array | All site locales | Specific languages to sync (only for configured mode) |
+| `includeLanguages` | Array | None | Whitelist of languages to sync (only these) |
+| `excludeLanguages` | Array | `[]` | Blacklist of languages to skip |
+
+#### Configuration Examples
+
+**Example 1: Auto-Discovery (Recommended)**
+
+Sync all languages where content exists:
+
+```json
+{
+  "_defaults": {
+    "articleType": "Knowledge__kav",
+    "masterLanguage": "en_US",
+    "languageMode": "auto",
+    "fieldMapping": {
+      "Title": "name",
+      "Body__c": "custom.body",
+      "SFCC_External_ID__c": "ID"
+    }
+  },
+  "RefArch": {
+    "contentFolderIDs": ["us-content"]
+  },
+  "RefArchGlobal": {
+    "contentFolderIDs": ["eu-content"],
+    "masterLanguage": "en_GB"
+  }
+}
+```
+
+**Result**:
+- If B2C content exists in en_US, es, fr → All 3 synced
+- If B2C content exists only in en_US → Only en_US synced
+- RefArchGlobal uses en_GB as master language
+
+**Example 2: Exclude Specific Languages**
+
+Auto-discover but skip certain languages:
+
+```json
+{
+  "_defaults": {
+    "masterLanguage": "en_US",
+    "excludeLanguages": ["ja", "de"]
+  },
+  "RefArch": {
+    "contentFolderIDs": ["root"]
+  }
+}
+```
+
+**Result**:
+- Site has locales: en_US, es, fr, de, ja
+- Filtered to: en_US, es, fr (de and ja excluded)
+- Only syncs content that exists in en_US, es, or fr
+
+**Example 3: Include Only Specific Languages**
+
+Whitelist specific languages:
+
+```json
+{
+  "_defaults": {
+    "masterLanguage": "en_US",
+    "includeLanguages": ["en_US", "es", "fr"]
+  },
+  "RefArch": {
+    "contentFolderIDs": ["root"]
+  }
+}
+```
+
+**Result**:
+- Only syncs en_US, es, and fr
+- Other languages ignored even if content exists
+
+**Example 4: Multi-Site with Different Languages**
+
+```json
+{
+  "_defaults": {
+    "articleType": "Knowledge__kav",
+    "masterLanguage": "en_US",
+    "fieldMapping": { ... }
+  },
+  "RefArchUS": {
+    "contentFolderIDs": ["us-content"],
+    "includeLanguages": ["en_US", "es"]
+  },
+  "RefArchEU": {
+    "contentFolderIDs": ["eu-content"],
+    "masterLanguage": "en_GB",
+    "includeLanguages": ["en_GB", "de", "fr", "es"]
+  },
+  "RefArchAsia": {
+    "contentFolderIDs": ["asia-content"],
+    "masterLanguage": "en_US",
+    "includeLanguages": ["en_US", "zh_CN", "ja"]
+  }
+}
+```
+
+**Result**:
+- US site: English and Spanish only
+- EU site: English (GB), German, French, Spanish
+- Asia site: English (US), Chinese, Japanese
+
+#### Language Metadata Tracking
+
+The integration tracks synced languages in the `sfLanguageVersions` custom attribute:
+
+```json
+{
+  "sfKnowledgeArticleId": "kA0xx000000001",
+  "sfKnowledgeVersionId": "ka0xx000000003",
+  "sfLastSyncDateTime": "2024-02-17T10:30:00Z",
+  "sfLanguageVersions": "[\"en_US\", \"es\", \"fr\"]"
+}
+```
+
+This metadata enables:
+- **Delta Sync**: Detect when new languages are added
+- **Audit Trail**: Track which languages have been synced
+- **Troubleshooting**: Verify language sync status
+
+#### How to Set Up Multi-Language Sync
+
+**Prerequisites**:
+1. Enable multiple locales in B2C Commerce site settings
+2. Ensure Salesforce Knowledge has languages enabled
+3. Import updated `content-metadata.xml` with `sfLanguageVersions` field
+
+**Step 1: Import Metadata**
+
+```bash
+# Import the updated metadata file
+Administration > Site Development > Import & Export
+Upload: cartridge/metadata/content-metadata.xml
+Select: Meta Data
+Click: Import
+```
+
+**Step 2: Configure Job**
+
+Add language parameters to your configuration:
+
+```json
+{
+  "_defaults": {
+    "masterLanguage": "en_US",
+    "languageMode": "auto"
+  },
+  "YourSiteID": {
+    "contentFolderIDs": ["root"]
+  }
+}
+```
+
+**Step 3: Run Sync**
+
+Execute the job. Log output will show:
+
+```
+Step 3.5: Discovering available languages for site
+Site has 5 enabled locales: en_US, es, fr, de, it
+Target locales after filtering: 5 - en_US, es, fr, de, it
+Master language: en_US
+========== LANGUAGE DISCOVERY ==========
+Site Locales: 5 - en_US, es, fr, de, it
+Target Locales: 5 - en_US, es, fr, de, it
+Master Language: en_US
+========================================
+Step 5.1: Expanding content assets to include all language versions
+Content FAQ-001 available in 3 languages: en_US, es, fr
+Original content assets: 10
+Total content assets with languages: 27
+Average languages per content: 2.70
+```
+
+#### Language Processing Flow
+
+1. **Discovery**: Detect site locales
+2. **Filter**: Apply include/exclude rules
+3. **Check Content**: For each content asset, check which languages exist
+4. **Sort**: Master language first, then others
+5. **Sync Master**: Create/update master language article
+6. **Sync Translations**: Create/update translation versions
+7. **Link**: All versions share same `KnowledgeArticleId`
+8. **Track**: Update `sfLanguageVersions` metadata
+
+#### Troubleshooting Multi-Language
+
+**Issue**: "Content not available in any target language"
+
+**Cause**: Content doesn't exist in any of the filtered locales.
+
+**Solution**:
+- Check B2C Commerce content is online in target locales
+- Verify locale filtering (includeLanguages/excludeLanguages)
+- Check site allowed locales in Business Manager
+
+**Issue**: "Master language not in available locales"
+
+**Cause**: Configured masterLanguage not enabled for site.
+
+**Solution**:
+- Integration automatically falls back to first available locale
+- Update masterLanguage in configuration to match site locales
+- Enable the locale in Business Manager
+
+**Issue**: "Language versions not linking in Salesforce"
+
+**Cause**: Articles created with different `SFCC_External_ID__c`.
+
+**Solution**:
+- Verify all language versions use same content ID
+- Check logs for `findArticleByExternalId` queries
+- Ensure External ID field mapping is consistent
+
+**Issue**: "Performance slow with many languages"
+
+**Cause**: Checking content in 10+ locales per content asset.
+
+**Solution**:
+- Use `includeLanguages` to limit to needed languages
+- Use `excludeLanguages` to skip unused languages
+- Increase batch size if processing many content assets
+
+#### Example Scenarios
+
+**Scenario 1: Add New Language to Existing Content**
+
+1. Content "FAQ-001" already synced in en_US
+2. Add Spanish (es) version in B2C Commerce
+3. Run job with `exportMode: "delta"`
+4. Integration detects new language
+5. Creates Spanish translation linked to existing article
+
+**Scenario 2: Multi-Regional Site**
+
+Site has:
+- US content: en_US, es (Spanish)
+- EU content: en_GB, de (German), fr (French)
+- Asia content: en_US, zh_CN (Chinese), ja (Japanese)
+
+```json
+{
+  "_defaults": {
+    "masterLanguage": "en_US",
+    "fieldMapping": { ... }
+  },
+  "RefArchUS": {
+    "contentFolderIDs": ["us"],
+    "includeLanguages": ["en_US", "es"]
+  },
+  "RefArchEU": {
+    "contentFolderIDs": ["eu"],
+    "masterLanguage": "en_GB",
+    "includeLanguages": ["en_GB", "de", "fr"]
+  },
+  "RefArchAsia": {
+    "contentFolderIDs": ["asia"],
+    "includeLanguages": ["en_US", "zh_CN", "ja"]
+  }
+}
+```
+
+**Scenario 3: Test Language Without Syncing**
+
+Want to test new language without syncing to Salesforce:
+
+```json
+{
+  "_defaults": {
+    "masterLanguage": "en_US",
+    "excludeLanguages": ["de"]  // Skip German during testing
+  }
+}
+```
+
+Later when ready:
+
+```json
+{
+  "_defaults": {
+    "masterLanguage": "en_US",
+    "excludeLanguages": []  // Now include German
+  }
+}
+```
+
+---
+
 ### Troubleshooting Multi-Site Configuration
 
 #### Issue: "Failed to parse SiteConfigurations JSON"
@@ -1554,6 +1899,641 @@ Use `"full"` mode only for:
 - Initial migration
 - Recovery after failures
 - Testing
+
+---
+
+## 📁 Data Category Management
+
+**New in v2.3**: Assign Knowledge articles to Salesforce data categories with content-level overrides, site-level defaults, and upfront validation.
+
+### Why Use Data Categories?
+
+Data categories in Salesforce Knowledge provide:
+- **Organization**: Group articles into logical categories (Products, Support, Services, etc.)
+- **Access Control**: Restrict article visibility based on category assignments
+- **Self-Service**: Enable customers to browse articles by category
+- **Agent Enablement**: Help agents find relevant articles quickly
+- **Multi-Channel**: Power case deflection, chat bots, and community portals
+
+### Key Features
+
+| Feature | Description |
+|---------|-------------|
+| **🎯 Content-Level Override** | Set categories on individual content assets via custom field |
+| **🌐 Site-Level Defaults** | Configure default categories per site in job configuration |
+| **✅ Upfront Validation** | Validate all categories against Salesforce before processing |
+| **🔄 Hierarchical Categories** | Support for nested categories (e.g., `All:Products:Electronics`) |
+| **📊 Multiple Category Groups** | Assign articles to multiple category groups simultaneously |
+| **🔧 Auto-Assignment** | Automatically assign categories to new and existing articles |
+| **🛡️ Error Prevention** | Fail fast with clear error messages for invalid categories |
+
+---
+
+### Data Category Configuration
+
+Data categories are configured at two levels:
+
+#### 1. Site-Level Defaults (Job Configuration)
+
+Configure default categories in the `SiteConfigurations` JSON:
+
+```json
+{
+  "_defaults": {
+    "articleType": "Knowledge__kav",
+    "fieldMapping": { "Title": "name", "Body__c": "custom.body" },
+    "dataCategories": {
+      "Categories": "All:Shop_Experience"
+    },
+    "dataCategoryField": "custom.sfDataCategory",
+    "validateDataCategories": true
+  },
+  "RefArch": {
+    "contentFolderIDs": ["us-faq"],
+    "dataCategories": {
+      "Categories": "All:Products:Electronics",
+      "Region": "North_America:US"
+    }
+  }
+}
+```
+
+**Parameters:**
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `dataCategories` | Object | No | `null` | Site-level category assignments `{ groupName: categoryPath }` |
+| `dataCategoryField` | String | No | `"custom.sfDataCategory"` | Custom field path for content-level overrides |
+| `validateDataCategories` | Boolean | No | `true` | Validate categories against Salesforce before processing |
+
+#### 2. Content-Level Overrides
+
+Set categories on individual content assets via a custom attribute:
+
+**Step 1: Create Custom Attribute**
+
+In Business Manager:
+```
+Content > Custom Attributes > New
+- ID: sfDataCategory
+- Type: String or Text
+- Description: "Salesforce Knowledge data category override"
+```
+
+**Step 2: Set Category on Content Asset**
+
+Open content asset and set the custom attribute:
+
+**Simple Format (Single Group):**
+```
+All:Products:Electronics
+```
+
+**JSON Format (Multiple Groups):**
+```json
+{
+  "Categories": "All:Products:Electronics",
+  "Region": "North_America:US"
+}
+```
+
+**Priority:** Content-level category > Site-level default > No category
+
+---
+
+### Category Format
+
+#### Hierarchical Path Format
+
+Categories use colon-separated paths representing the hierarchy:
+
+```
+GroupName:ParentCategory:ChildCategory:LeafCategory
+```
+
+**Examples:**
+- `All` - Root category in "All" group
+- `All:Products` - Products under All
+- `All:Products:Electronics` - Electronics under Products
+- `All:Products:Electronics:Phones` - Phones under Electronics
+
+#### Single Category Group
+
+**String format:**
+```json
+{
+  "dataCategories": {
+    "Categories": "All:Products:Electronics"
+  }
+}
+```
+
+#### Multiple Category Groups
+
+**Object format:**
+```json
+{
+  "dataCategories": {
+    "Categories": "All:Products:Electronics",
+    "Region": "North_America:US",
+    "Audience": "Internal:Agents"
+  }
+}
+```
+
+---
+
+### Content-Level Category Overrides
+
+Override site defaults on specific content assets:
+
+**Scenario:** Site default is "Shop_Experience" but one article should be in "Product_Information"
+
+**Site Configuration:**
+```json
+{
+  "RefArch": {
+    "dataCategories": {
+      "Categories": "All:Shop_Experience"
+    }
+  }
+}
+```
+
+**Content Asset Custom Attribute:**
+```
+sfDataCategory: "All:Product_Information"
+```
+
+**Result:** This specific article gets "Product_Information", all others get "Shop_Experience"
+
+#### Auto-Detection of Format
+
+The integration automatically detects category format:
+
+**If content attribute starts with `{`:** Parses as JSON (multiple groups)
+```json
+{
+  "Categories": "All:Products",
+  "Region": "North_America"
+}
+```
+
+**Otherwise:** Treats as simple string (single group - uses site's first group name)
+```
+All:Products
+```
+
+---
+
+### Upfront Validation
+
+Before processing any articles, the integration validates all categories against Salesforce.
+
+#### How Validation Works
+
+**Step 1: Collect All Categories**
+- Gather site-level defaults
+- Scan all content assets for custom category fields
+- Build complete list of unique category paths
+
+**Step 2: Validate Against Salesforce**
+- For each category path, extract the leaf category (e.g., "Shop_Experience" from "All:Shop_Experience")
+- Query Salesforce API: `/services/data/v58.0/support/dataCategoryGroups/{groupName}/dataCategories/{leafCategory}?sObjectName=KnowledgeArticleVersion`
+- Verify category exists and is active
+
+**Step 3: Fail Fast**
+- If any category is invalid, job fails immediately with detailed error
+- No articles are processed if validation fails
+- Clear error messages show which categories are invalid
+
+#### Validation Configuration
+
+**Enable validation (default):**
+```json
+{
+  "validateDataCategories": true
+}
+```
+
+**Disable validation (not recommended):**
+```json
+{
+  "validateDataCategories": false
+}
+```
+
+#### Validation Log Output
+
+```
+Step 4.6: Validating data categories with Salesforce
+Found 2 unique categories to validate across 1 groups
+Validating Categories group:
+  ✓ All:Shop_Experience - VALID
+  ✓ All:Product_Information - VALID
+Category validation successful - all categories are valid
+```
+
+**On Error:**
+```
+ERROR: Data category validation failed
+Invalid categories found:
+  Group: Categories
+    - Invalid_Category (not found in Salesforce)
+Please fix the category configuration and try again
+```
+
+---
+
+### Assigning Categories to Existing Articles
+
+The integration automatically assigns categories to both new and existing articles.
+
+#### For New Articles
+
+Categories are included in the initial creation payload:
+```json
+{
+  "Title": "How to Reset Password",
+  "Body__c": "<p>Instructions...</p>",
+  "DataCategorySelections": {
+    "Categories": [
+      { "dataCategoryName": "All:Shop_Experience" }
+    ]
+  }
+}
+```
+
+#### For Existing Articles
+
+When updating existing articles, categories are assigned using the `Knowledge__DataCategorySelection` API:
+
+**Process:**
+1. Query existing category assignments
+2. Identify categories to create/update
+3. Batch create new assignments using Composite API
+4. Update existing assignments individually
+
+**API Endpoints Used:**
+- Query: `/services/data/v58.0/query?q=SELECT Id, DataCategoryName, DataCategoryGroupName FROM Knowledge__DataCategorySelection WHERE ParentId='ka0xxx'`
+- Create (Batch): `/services/data/v58.0/composite/sobjects`
+- Update: `/services/data/v58.0/sobjects/Knowledge__DataCategorySelection/{id}`
+
+#### Batch Processing
+
+Multiple categories are created in a single API call:
+```json
+{
+  "records": [
+    {
+      "attributes": { "type": "Knowledge__DataCategorySelection" },
+      "ParentId": "ka0xx000000001",
+      "DataCategoryGroupName": "Categories",
+      "DataCategoryName": "Shop_Experience"
+    },
+    {
+      "attributes": { "type": "Knowledge__DataCategorySelection" },
+      "ParentId": "ka0xx000000001",
+      "DataCategoryGroupName": "Region",
+      "DataCategoryName": "US"
+    }
+  ]
+}
+```
+
+---
+
+### Data Category Examples
+
+#### Example 1: Simple Single Category
+
+**Configuration:**
+```json
+{
+  "_defaults": {
+    "articleType": "Knowledge__kav",
+    "recordTypeName": "SDO_Knowledge_FAQ",
+    "fieldMapping": {
+      "Title": "name",
+      "Body__c": "custom.body",
+      "SFCC_External_ID__c": "ID"
+    },
+    "dataCategories": {
+      "Categories": "All:Shop_Experience"
+    }
+  },
+  "RefArch": {
+    "contentFolderIDs": ["faq"]
+  }
+}
+```
+
+**Result:** All articles assigned to "Shop_Experience" category
+
+#### Example 2: Multiple Categories Per Site
+
+**Configuration:**
+```json
+{
+  "_defaults": {
+    "articleType": "Knowledge__kav",
+    "fieldMapping": { ... }
+  },
+  "RefArch": {
+    "dataCategories": {
+      "Categories": "All:Products:Electronics",
+      "Region": "North_America:US",
+      "Audience": "External:Customers"
+    }
+  }
+}
+```
+
+**Result:** Articles assigned to 3 categories across 3 groups
+
+#### Example 3: Different Categories Per Site
+
+**Configuration:**
+```json
+{
+  "_defaults": {
+    "articleType": "Knowledge__kav",
+    "fieldMapping": { ... }
+  },
+  "RefArchUS": {
+    "dataCategories": {
+      "Categories": "All:Products:Electronics",
+      "Region": "North_America:US"
+    }
+  },
+  "RefArchEU": {
+    "dataCategories": {
+      "Categories": "All:Support:Shipping",
+      "Region": "Europe:UK"
+    }
+  },
+  "RefArchAsia": {
+    "dataCategories": {
+      "Categories": "All:Support:International",
+      "Region": "Asia:Japan"
+    }
+  }
+}
+```
+
+**Result:** Each site's articles get region-specific categories
+
+#### Example 4: Content-Level Override
+
+**Site Configuration:**
+```json
+{
+  "RefArch": {
+    "dataCategories": {
+      "Categories": "All:Shop_Experience"
+    },
+    "dataCategoryField": "custom.sfDataCategory"
+  }
+}
+```
+
+**Content Asset 1 (uses site default):**
+- `sfDataCategory`: (empty)
+- **Result:** `All:Shop_Experience`
+
+**Content Asset 2 (overrides):**
+- `sfDataCategory`: `All:Product_Information`
+- **Result:** `All:Product_Information`
+
+**Content Asset 3 (multiple groups):**
+- `sfDataCategory`: `{"Categories": "All:Promotions", "Region": "North_America"}`
+- **Result:** Both categories assigned
+
+#### Example 5: Production Configuration with Categories
+
+**Complete example:**
+```json
+{
+  "_defaults": {
+    "articleType": "Knowledge__kav",
+    "recordTypeName": "SDO_Knowledge_FAQ",
+    "batchSize": 50,
+    "exportMode": "delta",
+    "publishArticles": false,
+    "autoCreateFields": true,
+    "validateDataCategories": true,
+    "dataCategoryField": "custom.sfDataCategory",
+
+    "fieldMapping": {
+      "Title": "name",
+      "Body__c": "custom.body",
+      "SFCC_External_ID__c": "ID",
+      "UrlName": "name"
+    },
+
+    "transforms": {
+      "UrlName": "urlSafe:-"
+    },
+
+    "fieldMetadata": {
+      "Body__c": {
+        "type": "LongTextArea",
+        "length": 32000,
+        "label": "Article Body"
+      }
+    }
+  },
+
+  "RefArch": {
+    "contentFolderIDs": ["us-faq", "us-help"],
+    "dataCategories": {
+      "Categories": "All:Products:Electronics",
+      "Region": "North_America:US"
+    },
+    "static": {
+      "Site__c": "RefArch",
+      "SubsidiaryID__c": 7
+    }
+  },
+
+  "RefArchGlobal": {
+    "contentFolderIDs": ["eu-faq"],
+    "dataCategories": {
+      "Categories": "All:Support:International",
+      "Region": "Europe:UK"
+    },
+    "static": {
+      "Site__c": "RefArchGlobal",
+      "SubsidiaryID__c": 12
+    }
+  }
+}
+```
+
+---
+
+### Troubleshooting Data Categories
+
+#### Issue: "Category validation failed - category not found"
+
+**Error:**
+```
+Invalid categories found:
+  Group: Categories
+    - Shop_Experience (not found in Salesforce)
+```
+
+**Causes & Solutions:**
+
+1. **Category doesn't exist in Salesforce**
+   - Navigate to Salesforce: Setup > Data Category Setup
+   - Verify the category exists in the specified group
+   - Check spelling and capitalization (case-sensitive)
+
+2. **Category not associated with Knowledge**
+   - In Salesforce, edit the category group
+   - Add "KnowledgeArticleVersion" to Available Objects
+   - Save and retry
+
+3. **Using full path instead of leaf category name**
+   - Configuration: `"Categories": "All:Shop_Experience"` ✅
+   - NOT: `"Categories": "Shop_Experience"` (may work but better to use full path)
+
+4. **Category is inactive**
+   - Activate the category in Salesforce
+   - Check category group visibility settings
+
+#### Issue: "Data category not assigned to article"
+
+**Symptoms:** Article created successfully but categories missing
+
+**Causes & Solutions:**
+
+1. **Record Type doesn't support categories**
+   - Verify Record Type allows data category assignments
+   - Check Record Type page layout includes Data Category field
+   - Some Record Types may restrict category groups
+
+2. **Insufficient permissions**
+   - Ensure user has "Manage Articles" permission
+   - Check category group visibility settings for user profile
+   - Verify user can see the category in Salesforce UI
+
+3. **Category assignment API failed silently**
+   - Enable debug logging: `"enableDebugLogging": true`
+   - Check logs for category assignment errors
+   - Look for "assignDataCategories" function output
+
+#### Issue: "Content-level override not working"
+
+**Symptoms:** Article gets site default instead of content-specific category
+
+**Causes & Solutions:**
+
+1. **Custom field name mismatch**
+   - Configuration: `"dataCategoryField": "custom.sfDataCategory"`
+   - Content attribute: Must match exactly (case-sensitive)
+   - Verify attribute exists in Business Manager
+
+2. **Invalid JSON format in content attribute**
+   - Test JSON at jsonlint.com
+   - Ensure proper quotes and brackets
+   - Check for trailing commas
+
+3. **Content attribute is empty or null**
+   - System falls back to site default (expected behavior)
+   - Set non-empty value to override
+
+4. **Category in wrong format**
+   - For multiple groups, use JSON: `{"Categories": "...", "Region": "..."}`
+   - For single group, use string: `"All:Shop_Experience"`
+
+#### Issue: "Multiple category groups not working"
+
+**Symptoms:** Only first category group is assigned
+
+**Causes & Solutions:**
+
+1. **Using string format instead of JSON**
+   - String format only supports one group
+   - Use JSON for multiple groups:
+   ```json
+   {
+     "Categories": "All:Products",
+     "Region": "North_America"
+   }
+   ```
+
+2. **Article type doesn't support multiple groups**
+   - Check Knowledge Article Type settings in Salesforce
+   - Verify all category groups are enabled for the article type
+
+3. **Category group names don't match Salesforce**
+   - Group names are case-sensitive
+   - Use exact API names from Salesforce
+   - Check Setup > Data Category Setup for correct names
+
+#### Issue: "Validation takes too long"
+
+**Symptoms:** Job step 4.6 (validation) runs for several minutes
+
+**Causes & Solutions:**
+
+1. **Too many unique categories**
+   - Each unique category requires API call
+   - Consider reducing category diversity
+   - Use site-level defaults more consistently
+
+2. **Network latency to Salesforce**
+   - Expected behavior - validation is thorough
+   - Typical: 2-5 categories = 5-10 seconds
+   - Consider disabling validation after initial setup (not recommended)
+
+3. **Disable validation (not recommended for production)**
+   ```json
+   {
+     "validateDataCategories": false
+   }
+   ```
+
+#### Debug Checklist
+
+When troubleshooting data categories:
+
+- [ ] Enable debug logging in configuration
+- [ ] Check Salesforce Data Category Setup for category existence
+- [ ] Verify category group is associated with KnowledgeArticleVersion
+- [ ] Confirm Record Type supports data categories
+- [ ] Test with simple single category first
+- [ ] Check user permissions in Salesforce
+- [ ] Verify custom attribute name matches configuration
+- [ ] Test JSON format in online validator
+- [ ] Review job logs for validation output
+- [ ] Check article in Salesforce UI for category assignment
+
+#### API Reference for Categories
+
+**Validation Endpoint:**
+```
+GET /services/data/v58.0/support/dataCategoryGroups/{groupName}/dataCategories/{categoryName}?sObjectName=KnowledgeArticleVersion
+```
+
+**Query Assignments:**
+```
+GET /services/data/v58.0/query?q=SELECT Id, DataCategoryName, DataCategoryGroupName FROM Knowledge__DataCategorySelection WHERE ParentId='ka0xxx'
+```
+
+**Create Assignment (Composite):**
+```
+POST /services/data/v58.0/composite/sobjects
+Body: { "records": [ { "attributes": { "type": "Knowledge__DataCategorySelection" }, ... } ] }
+```
+
+**Update Assignment:**
+```
+PATCH /services/data/v58.0/sobjects/Knowledge__DataCategorySelection/{id}
+Body: { "DataCategoryName": "Category_Name" }
+```
 
 ---
 
@@ -2556,6 +3536,33 @@ Follow these steps for submitting PRs:
 
 ## 📈 Version History
 
+### Version 2.3.0
+- ✨ **NEW**: Data category assignment and management
+- ✨ **NEW**: Content-level category overrides via custom fields
+- ✨ **NEW**: Site-level default category configuration
+- ✨ **NEW**: Upfront category validation against Salesforce
+- ✨ **NEW**: Support for hierarchical categories (e.g., "All:Products:Electronics")
+- ✨ **NEW**: Multiple category group support
+- ✨ **NEW**: Auto-assignment to existing articles via Knowledge__DataCategorySelection API
+- ✨ **NEW**: Batch category creation using Composite API
+- 🔧 Enhanced API response logging for CREATE and UPDATE operations
+- 📖 Comprehensive data category documentation
+
+### Version 2.2.0
+- ✨ **NEW**: Multi-language support with auto-discovery
+- ✨ **NEW**: Language filtering (includeLanguages/excludeLanguages)
+- ✨ **NEW**: Content-driven language detection
+- ✨ **NEW**: Translation article linking
+- 📊 Language metadata tracking
+
+### Version 2.1.0
+- ✨ **NEW**: Multi-site configuration with `_defaults` inheritance
+- ✨ **NEW**: Field transformations (urlSafe, replaceSpaces, etc.)
+- ✨ **NEW**: Static field values
+- ✨ **NEW**: Record Type configuration by API name
+- ✨ **NEW**: Multi-folder support with deduplication
+- 📖 Extensive multi-site configuration documentation
+
 ### Version 2.0.0
 - ✨ **NEW**: Incremental/delta sync mode (default)
 - ✨ **NEW**: Sync metadata tracking on Content Assets
@@ -2592,6 +3599,6 @@ Follow these steps for submitting PRs:
 
 ---
 
-**Version**: 2.0.0
-**Last Updated**: February 2024
+**Version**: 2.3.0
+**Last Updated**: March 2026
 **Compatibility**: SFCC B2C 21.x+, Salesforce API v58.0+

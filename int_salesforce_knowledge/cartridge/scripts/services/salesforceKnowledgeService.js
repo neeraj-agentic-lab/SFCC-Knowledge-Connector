@@ -177,7 +177,8 @@ function getKnowledgeService(serviceId) {
             svc.addHeader('Authorization', 'Bearer ' + params.accessToken);
             svc.addHeader('Content-Type', 'application/json');
 
-            if (params.body) {
+            // Only send body for POST, PATCH, PUT methods
+            if (params.body && params.method !== 'GET' && params.method !== 'DELETE') {
                 return JSON.stringify(params.body);
             }
 

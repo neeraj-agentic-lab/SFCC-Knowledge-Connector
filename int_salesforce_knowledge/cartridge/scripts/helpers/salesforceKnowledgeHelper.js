@@ -108,25 +108,35 @@ function upsertKnowledgeArticle(contentAsset, config) {
 
         logger.debug('Authentication successful, checking for existing article');
 
-        // Find existing article by SFCC_External_ID__c first
+        // Get language from contentAsset or config, default to en_US
+        var language = (contentAsset && contentAsset.language) || (config && config.language) || 'en_US';
+        logger.debug('Using language for article lookup: ' + language);
+
+        // Add language to config for mapping function to use
+        if (config) {
+            config.language = language;
+        }
+
+        // Find existing article by SFCC_External_ID__c AND Language
         var existingArticle = findArticleByExternalId(
             authResult.accessToken,
             authResult.instanceUrl,
             contentAsset.ID,
             articleType,
+            language,
             serviceID
         );
 
         var result;
 
         if (existingArticle) {
-            logger.info('Found existing article: KnowledgeArticleId=' + existingArticle.KnowledgeArticleId + ', PublishStatus=' + existingArticle.PublishStatus);
+            logger.info('[' + contentAsset.ID + '] Found existing article: KnowledgeArticleId=' + existingArticle.KnowledgeArticleId + ', PublishStatus=' + existingArticle.PublishStatus);
 
             // Map content asset to article format for UPDATE (isCreate = false)
             var updateData = contentMappingHelper.mapContentToArticle(contentAsset, articleType, fieldMapping, dataCategory, false, enableDebugLogging, config);
 
             if (!updateData || Object.keys(updateData).length <= 1) {
-                logger.error('Article mapping resulted in empty data');
+                logger.error('[' + contentAsset.ID + '] Article mapping resulted in empty data');
                 return {
                     success: false,
                     error: 'Failed to map content to article'
@@ -145,16 +155,17 @@ function upsertKnowledgeArticle(contentAsset, config) {
                 articleType,
                 enableDebugLogging,
                 publishArticles,
-                serviceID
+                serviceID,
+                contentAsset.ID
             );
         } else {
-            logger.info('No existing article found, creating new article for content: ' + contentAsset.ID);
+            logger.info('[' + contentAsset.ID + '] No existing article found, creating new article');
 
             // Map content asset to article format for CREATE (isCreate = true)
             var createData = contentMappingHelper.mapContentToArticle(contentAsset, articleType, fieldMapping, dataCategory, true, enableDebugLogging, config);
 
             if (!createData || Object.keys(createData).length <= 1) {
-                logger.error('Article mapping resulted in empty data');
+                logger.error('[' + contentAsset.ID + '] Article mapping resulted in empty data');
                 return {
                     success: false,
                     error: 'Failed to map content to article'
@@ -172,7 +183,8 @@ function upsertKnowledgeArticle(contentAsset, config) {
                 articleType,
                 enableDebugLogging,
                 publishArticles,
-                serviceID
+                serviceID,
+                contentAsset.ID
             );
         }
 
@@ -209,14 +221,18 @@ function upsertKnowledgeArticle(contentAsset, config) {
  * @param {string} instanceUrl - Salesforce instance URL
  * @param {string} externalId - B2C Content Asset ID
  * @param {string} articleType - Knowledge Article Type (e.g., 'Knowledge__kav')
+ * @param {string} language - Language code (e.g., 'en_US', 'es', 'fr') - defaults to 'en_US'
  * @param {string} serviceID - Service ID for Salesforce API
  * @returns {Object|null} Article object or null if not found
  * @returns {string} article.Id - Salesforce version record ID
  * @returns {string} article.KnowledgeArticleId - Master article ID (stable across versions)
  * @returns {string} article.PublishStatus - Publish status (Online, Draft, etc.)
  */
-function findArticleByExternalId(accessToken, instanceUrl, externalId, articleType, serviceID) {
-    logger.debug('Searching for existing article with SFCC_External_ID__c: ' + externalId);
+function findArticleByExternalId(accessToken, instanceUrl, externalId, articleType, language, serviceID) {
+    // Default language to en_US if not provided
+    var lang = language || 'en_US';
+
+    logger.debug('Searching for existing article with SFCC_External_ID__c: ' + externalId + ', Language: ' + lang);
 
     try {
         var escapedId = externalId.replace(/'/g, "\\'");
@@ -227,9 +243,10 @@ function findArticleByExternalId(accessToken, instanceUrl, externalId, articleTy
         }
 
         // STEP 1: First, search for Draft version (highest priority)
-        var draftQuery = "SELECT Id, KnowledgeArticleId, Title, " + EXTERNAL_ID_FIELD + ", PublishStatus, VersionNumber " +
+        var draftQuery = "SELECT Id, KnowledgeArticleId, Title, " + EXTERNAL_ID_FIELD + ", Language, PublishStatus, VersionNumber " +
             "FROM " + articleType +
             " WHERE " + EXTERNAL_ID_FIELD + " = '" + escapedId + "' " +
+            "AND Language = '" + lang + "' " +
             "AND PublishStatus = 'Draft' " +
             "ORDER BY VersionNumber DESC LIMIT 1";
 
@@ -248,7 +265,7 @@ function findArticleByExternalId(accessToken, instanceUrl, externalId, articleTy
 
             if (draftRecords && draftRecords.length > 0) {
                 var draftArticle = draftRecords[0];
-                logger.info('Found existing DRAFT article: Id=' + draftArticle.Id + ', KnowledgeArticleId=' + draftArticle.KnowledgeArticleId + ', PublishStatus=' + draftArticle.PublishStatus);
+                logger.info('[' + externalId + '] Found existing DRAFT article: Id=' + draftArticle.Id + ', KnowledgeArticleId=' + draftArticle.KnowledgeArticleId + ', Language=' + lang + ', PublishStatus=' + draftArticle.PublishStatus);
                 return draftArticle;
             }
         }
@@ -256,9 +273,10 @@ function findArticleByExternalId(accessToken, instanceUrl, externalId, articleTy
         // STEP 2: No Draft found, search for Online version
         logger.debug('No draft found, searching for Online version');
 
-        var onlineQuery = "SELECT Id, KnowledgeArticleId, Title, " + EXTERNAL_ID_FIELD + ", PublishStatus, VersionNumber " +
+        var onlineQuery = "SELECT Id, KnowledgeArticleId, Title, " + EXTERNAL_ID_FIELD + ", Language, PublishStatus, VersionNumber " +
             "FROM " + articleType +
             " WHERE " + EXTERNAL_ID_FIELD + " = '" + escapedId + "' " +
+            "AND Language = '" + lang + "' " +
             "AND PublishStatus = 'Online' " +
             "ORDER BY VersionNumber DESC LIMIT 1";
 
@@ -277,7 +295,7 @@ function findArticleByExternalId(accessToken, instanceUrl, externalId, articleTy
 
             if (onlineRecords && onlineRecords.length > 0) {
                 var onlineArticle = onlineRecords[0];
-                logger.info('Found existing ONLINE article: Id=' + onlineArticle.Id + ', KnowledgeArticleId=' + onlineArticle.KnowledgeArticleId + ', PublishStatus=' + onlineArticle.PublishStatus);
+                logger.info('Found existing ONLINE article: Id=' + onlineArticle.Id + ', KnowledgeArticleId=' + onlineArticle.KnowledgeArticleId + ', Language=' + lang + ', PublishStatus=' + onlineArticle.PublishStatus);
                 return onlineArticle;
             }
         }
@@ -285,9 +303,10 @@ function findArticleByExternalId(accessToken, instanceUrl, externalId, articleTy
         // STEP 3: No Draft or Online found, try Archived or other statuses
         logger.debug('No draft or online found, searching all statuses');
 
-        var allQuery = "SELECT Id, KnowledgeArticleId, Title, " + EXTERNAL_ID_FIELD + ", PublishStatus, VersionNumber " +
+        var allQuery = "SELECT Id, KnowledgeArticleId, Title, " + EXTERNAL_ID_FIELD + ", Language, PublishStatus, VersionNumber " +
             "FROM " + articleType +
             " WHERE " + EXTERNAL_ID_FIELD + " = '" + escapedId + "' " +
+            "AND Language = '" + lang + "' " +
             "ORDER BY VersionNumber DESC LIMIT 1";
 
         logger.debug('Query (All): ' + allQuery);
@@ -305,12 +324,12 @@ function findArticleByExternalId(accessToken, instanceUrl, externalId, articleTy
 
             if (allRecords && allRecords.length > 0) {
                 var article = allRecords[0];
-                logger.info('Found existing article (other status): Id=' + article.Id + ', KnowledgeArticleId=' + article.KnowledgeArticleId + ', PublishStatus=' + article.PublishStatus);
+                logger.info('[' + externalId + '] Found existing article (other status): Id=' + article.Id + ', KnowledgeArticleId=' + article.KnowledgeArticleId + ', Language=' + lang + ', PublishStatus=' + article.PublishStatus);
                 return article;
             }
         }
 
-        logger.debug('No existing article found with SFCC_External_ID__c: ' + externalId);
+        logger.debug('No existing article found with SFCC_External_ID__c: ' + externalId + ', Language: ' + lang);
         return null;
 
     } catch (e) {
@@ -335,10 +354,12 @@ function findArticleByExternalId(accessToken, instanceUrl, externalId, articleTy
  * @param {boolean} enableDebugLogging - Enable debug logging
  * @param {boolean} publishArticles - Whether to publish the article (true) or keep as draft (false)
  * @param {string} serviceID - Service ID for Salesforce API
+ * @param {string} contentId - Content Asset ID for logging
  * @returns {Object} Update result
  */
-function updateArticleWithVersioning(accessToken, instanceUrl, existingArticle, articleData, articleType, enableDebugLogging, publishArticles, serviceID) {
-    logger.info('Updating article with versioning: KnowledgeArticleId=' + existingArticle.KnowledgeArticleId + ', PublishStatus=' + existingArticle.PublishStatus);
+function updateArticleWithVersioning(accessToken, instanceUrl, existingArticle, articleData, articleType, enableDebugLogging, publishArticles, serviceID, contentId) {
+    var logPrefix = contentId ? '[' + contentId + '] ' : '';
+    logger.info(logPrefix + 'Updating article with versioning: KnowledgeArticleId=' + existingArticle.KnowledgeArticleId + ', PublishStatus=' + existingArticle.PublishStatus);
 
     try {
         var draftId;
@@ -363,30 +384,52 @@ function updateArticleWithVersioning(accessToken, instanceUrl, existingArticle, 
 
         } else if (existingArticle.PublishStatus === 'Draft') {
             // Draft already exists, use it
-            logger.info('Draft version already exists: ' + existingArticle.Id);
+            logger.info(logPrefix + 'Draft version already exists: ' + existingArticle.Id);
             draftId = existingArticle.Id;
 
         } else {
             // Other status (Archived, etc.) - log warning and attempt to update
-            logger.warn('Article has unusual PublishStatus: ' + existingArticle.PublishStatus + ', attempting direct update');
+            logger.warn(logPrefix + 'Article has unusual PublishStatus: ' + existingArticle.PublishStatus + ', attempting direct update');
             draftId = existingArticle.Id;
         }
 
         // Update the draft
-        logger.info('Updating draft article: ' + draftId);
+        logger.info(logPrefix + 'Updating draft article: ' + draftId);
 
         var endpoint = '/sobjects/' + articleType + '/' + draftId;
+
+        // IMPORTANT: Remove immutable fields from update payload
+        // These fields cannot be updated via PATCH - they're set only during creation:
+        // - DataCategorySelections: Categories are immutable
+        // - RecordTypeId: Record type cannot be changed
+        // - attributes: Metadata object not allowed in PATCH
+        var excludeFields = ['DataCategorySelections', 'RecordTypeId', 'attributes'];
+        var updatePayload = {};
+        for (var key in articleData) {
+            if (articleData.hasOwnProperty(key) && excludeFields.indexOf(key) === -1) {
+                updatePayload[key] = articleData[key];
+            }
+        }
 
         if (enableDebugLogging) {
             logger.info('========== DEBUG: SALESFORCE API REQUEST (UPDATE) ==========');
             logger.info('Endpoint: ' + instanceUrl + '/services/data/' + API_VERSION + endpoint);
             logger.info('Method: PATCH');
+
+            var excludedFields = [];
+            if (articleData.DataCategorySelections) excludedFields.push('DataCategorySelections');
+            if (articleData.RecordTypeId) excludedFields.push('RecordTypeId');
+            if (articleData.attributes) excludedFields.push('attributes');
+
+            if (excludedFields.length > 0) {
+                logger.info('Note: Excluded immutable fields from update: ' + excludedFields.join(', '));
+            }
             logger.info('Payload:');
             try {
-                logger.info(JSON.stringify(articleData, null, 2));
+                logger.info(JSON.stringify(updatePayload, null, 2));
             } catch (e) {
                 logger.warn('Could not stringify payload: ' + e.message);
-                logger.info('Payload fields: ' + Object.keys(articleData).join(', '));
+                logger.info('Payload fields: ' + Object.keys(updatePayload).join(', '));
             }
             logger.info('===========================================================');
         }
@@ -397,12 +440,29 @@ function updateArticleWithVersioning(accessToken, instanceUrl, existingArticle, 
             instanceUrl: instanceUrl,
             endpoint: endpoint,
             method: 'PATCH',
-            body: articleData
+            body: updatePayload
         });
+
+        if (enableDebugLogging) {
+            logger.info('========== DEBUG: SALESFORCE API RESPONSE (UPDATE) ==========');
+            logger.info('HTTP Status: ' + updateResult.status);
+            logger.info('Response Object:');
+            try {
+                logger.info(JSON.stringify(updateResult.object, null, 2));
+            } catch (e) {
+                logger.warn('Could not stringify response object: ' + e.message);
+                if (updateResult.object) {
+                    logger.info('Response success: ' + updateResult.object.success);
+                    logger.info('Response data: ' + (updateResult.object.data ? JSON.stringify(updateResult.object.data) : 'null'));
+                    logger.info('Response error: ' + (updateResult.object.errorMessage || 'none'));
+                }
+            }
+            logger.info('===========================================================');
+        }
 
         if (updateResult.status !== 'OK' || !updateResult.object || !updateResult.object.success) {
             var errorMsg = updateResult.object ? updateResult.object.errorMessage : (updateResult.errorMessage || 'Update failed');
-            logger.error('Draft update failed: ' + errorMsg);
+            logger.error(logPrefix + 'Draft update failed: ' + errorMsg);
             return {
                 success: false,
                 error: 'Failed to update draft: ' + errorMsg,
@@ -410,7 +470,28 @@ function updateArticleWithVersioning(accessToken, instanceUrl, existingArticle, 
             };
         }
 
-        logger.info('Successfully updated draft article: ' + draftId);
+        logger.info(logPrefix + 'Successfully updated draft article: ' + draftId);
+
+        // STEP 2: Assign/update data categories if configured
+        if (articleData.DataCategorySelections) {
+            logger.info(logPrefix + 'Assigning data categories to article');
+
+            var categoryResult = assignDataCategories(
+                accessToken,
+                instanceUrl,
+                draftId,
+                articleData.DataCategorySelections,
+                serviceID,
+                logPrefix
+            );
+
+            if (!categoryResult.success) {
+                logger.warn(logPrefix + 'Data category assignment failed: ' + categoryResult.error);
+                // Don't fail the whole update - article is still updated, just categories failed
+            } else {
+                logger.info(logPrefix + 'Data categories assigned successfully');
+            }
+        }
 
         // Conditionally publish the draft based on publishArticles flag
         if (publishArticles) {
@@ -472,10 +553,12 @@ function updateArticleWithVersioning(accessToken, instanceUrl, existingArticle, 
  * @param {boolean} enableDebugLogging - Enable debug logging
  * @param {boolean} publishArticles - Whether to publish the article (true) or keep as draft (false)
  * @param {string} serviceID - Service ID for Salesforce API
+ * @param {string} contentId - Content Asset ID for logging
  * @returns {Object} Create result
  */
-function createArticle(accessToken, instanceUrl, articleData, articleType, enableDebugLogging, publishArticles, serviceID) {
-    logger.info('Creating new Knowledge article');
+function createArticle(accessToken, instanceUrl, articleData, articleType, enableDebugLogging, publishArticles, serviceID, contentId) {
+    var logPrefix = contentId ? '[' + contentId + '] ' : '';
+    logger.info(logPrefix + 'Creating new Knowledge article');
 
     try {
         var endpoint = '/sobjects/' + articleType;
@@ -503,10 +586,27 @@ function createArticle(accessToken, instanceUrl, articleData, articleType, enabl
             body: articleData
         });
 
+        if (enableDebugLogging) {
+            logger.info('========== DEBUG: SALESFORCE API RESPONSE (CREATE) ==========');
+            logger.info('HTTP Status: ' + result.status);
+            logger.info('Response Object:');
+            try {
+                logger.info(JSON.stringify(result.object, null, 2));
+            } catch (e) {
+                logger.warn('Could not stringify response object: ' + e.message);
+                if (result.object) {
+                    logger.info('Response success: ' + result.object.success);
+                    logger.info('Response data: ' + (result.object.data ? JSON.stringify(result.object.data) : 'null'));
+                    logger.info('Response error: ' + (result.object.errorMessage || 'none'));
+                }
+            }
+            logger.info('===========================================================');
+        }
+
         // Process result
         if (result.status === 'OK' && result.object && result.object.success) {
             var articleId = result.object.data.id;
-            logger.info('Successfully created article: ' + articleId);
+            logger.info(logPrefix + 'Successfully created article: ' + articleId);
 
             // Query to get KnowledgeArticleId
             var query = "SELECT Id, KnowledgeArticleId FROM " + articleType + " WHERE Id = '" + articleId + "'";
@@ -643,6 +743,12 @@ function editOnlineArticle(accessToken, instanceUrl, knowledgeArticleId, service
                 articleId: knowledgeArticleId
             }
         });
+
+        logger.debug('Edit Online Article Response - Status: ' + result.status);
+        if (result.object) {
+            logger.debug('Edit Online Article Response - Success: ' + result.object.success);
+            logger.debug('Edit Online Article Response - Data: ' + JSON.stringify(result.object.data || {}));
+        }
 
         if (result.status === 'OK' && result.object && result.object.success) {
             var draftId = result.object.data.id;
@@ -900,6 +1006,186 @@ function deleteArticle(externalId, articleType, serviceID) {
         return {
             success: false,
             error: 'Exception: ' + e.message
+        };
+    }
+}
+
+/**
+ * Assign data categories to a Knowledge article version
+ *
+ * Uses the Knowledge__DataCategorySelection object to assign categories to existing articles.
+ * This allows updating categories on articles that were created without them.
+ *
+ * @param {string} accessToken - OAuth access token
+ * @param {string} instanceUrl - Salesforce instance URL
+ * @param {string} articleVersionId - Article version ID (ka0...)
+ * @param {Object} dataCategorySelections - Data category selections object
+ * @param {string} serviceID - Service ID for API calls
+ * @param {string} logPrefix - Log prefix for messages
+ * @returns {Object} Result
+ * @returns {boolean} result.success - Whether operation succeeded
+ * @returns {string} result.error - Error message (if failed)
+ */
+function assignDataCategories(accessToken, instanceUrl, articleVersionId, dataCategorySelections, serviceID, logPrefix) {
+    try {
+        var service = services.getKnowledgeService(serviceID);
+
+        // Extract category selections
+        // Format: { "DataCategorySelections": { "Categories": [{ "dataCategoryName": "All:Shop_Experience" }] } }
+        var selections = dataCategorySelections.DataCategorySelections || dataCategorySelections;
+
+        // Step 1: Query existing assignments for this article
+        var queryEndpoint = '/query?q=' + encodeURIComponent(
+            "SELECT Id, DataCategoryGroupName, DataCategoryName " +
+            "FROM Knowledge__DataCategorySelection " +
+            "WHERE ParentId = '" + articleVersionId + "'"
+        );
+
+        var queryResult = service.call({
+            accessToken: accessToken,
+            instanceUrl: instanceUrl,
+            endpoint: queryEndpoint,
+            method: 'GET'
+        });
+
+        var existingAssignments = {};
+        if (queryResult.status === 'OK' && queryResult.object && queryResult.object.success) {
+            var records = queryResult.object.data.records || [];
+            for (var i = 0; i < records.length; i++) {
+                var record = records[i];
+                existingAssignments[record.DataCategoryGroupName] = {
+                    id: record.Id,
+                    categoryName: record.DataCategoryName
+                };
+            }
+            logger.info(logPrefix + '  Found ' + records.length + ' existing category assignment(s)');
+        }
+
+        // Step 2: Build records to create/update
+        var recordsToCreate = [];
+        var recordsToUpdate = [];
+
+        for (var groupName in selections) {
+            if (selections.hasOwnProperty(groupName)) {
+                var categories = selections[groupName];
+
+                for (var j = 0; j < categories.length; j++) {
+                    var category = categories[j];
+                    var categoryPath = category.dataCategoryName;
+
+                    // Extract the leaf category name from the path
+                    // "All:Shop_Experience" -> "Shop_Experience"
+                    var pathSegments = categoryPath.split(':');
+                    var leafCategoryName = pathSegments[pathSegments.length - 1].trim();
+
+                    var existing = existingAssignments[groupName];
+
+                    if (existing) {
+                        // Check if category changed
+                        if (existing.categoryName !== leafCategoryName) {
+                            logger.info(logPrefix + '  - Updating category group "' + groupName + '": ' + existing.categoryName + ' → ' + leafCategoryName);
+                            recordsToUpdate.push({
+                                id: existing.id,
+                                body: { DataCategoryName: leafCategoryName }
+                            });
+                        } else {
+                            logger.info(logPrefix + '  - Category group "' + groupName + '" already assigned: ' + leafCategoryName);
+                        }
+                    } else {
+                        // New assignment needed
+                        logger.info(logPrefix + '  - Assigning new category group "' + groupName + '": ' + leafCategoryName);
+                        recordsToCreate.push({
+                            ParentId: articleVersionId,
+                            DataCategoryGroupName: groupName,
+                            DataCategoryName: leafCategoryName
+                        });
+                    }
+                }
+            }
+        }
+
+        // Step 3: Create new assignments using Composite API (batch)
+        if (recordsToCreate.length > 0) {
+            logger.info(logPrefix + '  Creating ' + recordsToCreate.length + ' category assignment(s)');
+
+            var createEndpoint = '/composite/sobjects';
+            var createResult = service.call({
+                accessToken: accessToken,
+                instanceUrl: instanceUrl,
+                endpoint: createEndpoint,
+                method: 'POST',
+                body: {
+                    allOrNone: false,
+                    records: recordsToCreate.map(function(rec) {
+                        return {
+                            attributes: { type: 'Knowledge__DataCategorySelection' },
+                            ParentId: rec.ParentId,
+                            DataCategoryGroupName: rec.DataCategoryGroupName,
+                            DataCategoryName: rec.DataCategoryName
+                        };
+                    })
+                }
+            });
+
+            if (createResult.status === 'OK' && createResult.object && createResult.object.success) {
+                var results = createResult.object.data || [];
+                var successCount = 0;
+                var errorCount = 0;
+
+                for (var k = 0; k < results.length; k++) {
+                    if (results[k].success) {
+                        successCount++;
+                    } else {
+                        errorCount++;
+                        logger.warn(logPrefix + '    ✗ Failed to create assignment: ' + JSON.stringify(results[k].errors));
+                    }
+                }
+
+                logger.info(logPrefix + '    ✓ Created ' + successCount + ' assignment(s)' + (errorCount > 0 ? ', ' + errorCount + ' failed' : ''));
+            } else {
+                var createError = createResult.object ? createResult.object.errorMessage : 'Create failed';
+                logger.warn(logPrefix + '    ✗ Failed to create assignments: ' + createError);
+            }
+        }
+
+        // Step 4: Update existing assignments (individual PATCH calls)
+        if (recordsToUpdate.length > 0) {
+            logger.info(logPrefix + '  Updating ' + recordsToUpdate.length + ' category assignment(s)');
+
+            for (var m = 0; m < recordsToUpdate.length; m++) {
+                var updateRec = recordsToUpdate[m];
+                var updateEndpoint = '/sobjects/Knowledge__DataCategorySelection/' + updateRec.id;
+
+                var updateResult = service.call({
+                    accessToken: accessToken,
+                    instanceUrl: instanceUrl,
+                    endpoint: updateEndpoint,
+                    method: 'PATCH',
+                    body: updateRec.body
+                });
+
+                if (updateResult.status === 'OK' && updateResult.object && updateResult.object.success) {
+                    logger.info(logPrefix + '    ✓ Updated assignment ' + updateRec.id);
+                } else {
+                    var updateError = updateResult.object ? updateResult.object.errorMessage : 'Update failed';
+                    logger.warn(logPrefix + '    ✗ Failed to update assignment: ' + updateError);
+                }
+            }
+        }
+
+        if (recordsToCreate.length === 0 && recordsToUpdate.length === 0) {
+            logger.info(logPrefix + '  All category assignments up to date');
+        }
+
+        return {
+            success: true
+        };
+
+    } catch (e) {
+        logger.error(logPrefix + 'Exception assigning data categories: ' + e.message);
+        return {
+            success: false,
+            error: e.message
         };
     }
 }

@@ -271,10 +271,86 @@ function validateConfiguration(config, siteID) {
         result.valid = false;
     }
 
-    // Validate dataCategory
+    // Validate dataCategory (legacy single string format - deprecated)
     if (config.dataCategory && typeof config.dataCategory !== 'string') {
         result.errors.push('dataCategory must be a string');
         result.valid = false;
+    }
+
+    // Validate dataCategories (v2.3+ - object format with category groups)
+    if (config.dataCategories) {
+        if (typeof config.dataCategories !== 'object' || config.dataCategories === null) {
+            result.errors.push('dataCategories must be an object');
+            result.valid = false;
+        } else {
+            // Validate each category group
+            for (var groupName in config.dataCategories) {
+                if (config.dataCategories.hasOwnProperty(groupName)) {
+                    var categoryValue = config.dataCategories[groupName];
+                    if (typeof categoryValue !== 'string') {
+                        result.errors.push('dataCategories.' + groupName + ' must be a string');
+                        result.valid = false;
+                    }
+                }
+            }
+        }
+    }
+
+    // Validate dataCategoryField (v2.3+)
+    if (config.dataCategoryField !== undefined && typeof config.dataCategoryField !== 'string') {
+        result.errors.push('dataCategoryField must be a string (e.g., "custom.sfDataCategory")');
+        result.valid = false;
+    }
+
+    // Validate validateDataCategories (v2.3+)
+    if (config.validateDataCategories !== undefined && typeof config.validateDataCategories !== 'boolean') {
+        result.errors.push('validateDataCategories must be a boolean');
+        result.valid = false;
+    }
+
+    // Validate masterLanguage (v2.2+)
+    if (config.masterLanguage) {
+        if (typeof config.masterLanguage !== 'string') {
+            result.errors.push('masterLanguage must be a string (e.g., "en_US")');
+            result.valid = false;
+        } else if (config.masterLanguage.trim() === '') {
+            result.errors.push('masterLanguage cannot be empty');
+            result.valid = false;
+        }
+    }
+
+    // Validate languageMode (v2.2+)
+    if (config.languageMode) {
+        if (config.languageMode !== 'auto' && config.languageMode !== 'configured') {
+            result.errors.push('languageMode must be "auto" or "configured"');
+            result.valid = false;
+        }
+    }
+
+    // Validate languages array (v2.2+)
+    if (config.languages) {
+        if (!Array.isArray(config.languages)) {
+            result.errors.push('languages must be an array of language codes');
+            result.valid = false;
+        } else if (config.languages.length === 0) {
+            result.warnings.push('languages array is empty');
+        }
+    }
+
+    // Validate includeLanguages (v2.2+)
+    if (config.includeLanguages) {
+        if (!Array.isArray(config.includeLanguages)) {
+            result.errors.push('includeLanguages must be an array');
+            result.valid = false;
+        }
+    }
+
+    // Validate excludeLanguages (v2.2+)
+    if (config.excludeLanguages) {
+        if (!Array.isArray(config.excludeLanguages)) {
+            result.errors.push('excludeLanguages must be an array');
+            result.valid = false;
+        }
     }
 
     // Log validation results
@@ -455,9 +531,20 @@ function logEffectiveConfiguration(config, siteID) {
     logger.info('Export Mode: ' + (config.exportMode || 'not set'));
     logger.info('Publish Articles: ' + (config.publishArticles !== undefined ? config.publishArticles : 'not set'));
     logger.info('Record Type Name: ' + (config.recordTypeName || 'none'));
-    logger.info('Data Category: ' + (config.dataCategory || 'none'));
+    logger.info('Data Category (legacy): ' + (config.dataCategory || 'none'));
     logger.info('Auto Create Fields: ' + (config.autoCreateFields !== undefined ? config.autoCreateFields : 'not set'));
     logger.info('Enable Debug Logging: ' + (config.enableDebugLogging !== undefined ? config.enableDebugLogging : 'not set'));
+
+    // Data categories (v2.3+)
+    if (config.dataCategories) {
+        logger.info('Data Categories: ' + JSON.stringify(config.dataCategories));
+    }
+    if (config.dataCategoryField) {
+        logger.info('Data Category Field: ' + config.dataCategoryField);
+    }
+    if (config.validateDataCategories !== undefined) {
+        logger.info('Validate Data Categories: ' + config.validateDataCategories);
+    }
 
     if (config.fieldMapping) {
         logger.info('Field Mapping: ' + JSON.stringify(config.fieldMapping));
@@ -469,6 +556,22 @@ function logEffectiveConfiguration(config, siteID) {
 
     if (config.static) {
         logger.info('Static Fields: ' + JSON.stringify(config.static));
+    }
+
+    // Log language configuration (v2.2+)
+    logger.info('Master Language: ' + (config.masterLanguage || 'en_US (default)'));
+    logger.info('Language Mode: ' + (config.languageMode || 'auto (default)'));
+
+    if (config.languages) {
+        logger.info('Configured Languages: ' + JSON.stringify(config.languages));
+    }
+
+    if (config.includeLanguages) {
+        logger.info('Include Languages: ' + JSON.stringify(config.includeLanguages));
+    }
+
+    if (config.excludeLanguages) {
+        logger.info('Exclude Languages: ' + JSON.stringify(config.excludeLanguages));
     }
 
     logger.info('==================================================');

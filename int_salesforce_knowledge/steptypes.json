@@ -25,7 +25,7 @@
                             "@required": "false",
                             "@trim": "true",
                             "description": "Multi-site configuration JSON with _defaults inheritance. See README for full documentation.",
-                            "default-value": "{\"_defaults\":{\"articleType\":\"Knowledge__kav\",\"recordTypeName\":\"Knowledge\",\"fieldMapping\":{\"Title\":\"name\",\"Body__c\":\"custom.body\",\"SFCC_External_ID__c\":\"ID\",\"UrlName\":\"name\"},\"transforms\":{\"UrlName\":\"urlSafe:-\"},\"batchSize\":50,\"exportMode\":\"full\",\"publishArticles\":false,\"autoCreateFields\":true,\"fieldMetadata\":{\"Site__c\":{\"label\":\"Site\",\"type\":\"Text\",\"length\":80}}},\"RefArch\":{\"contentFolderIDs\":[\"root\"],\"static\":{\"Site__c\":\"RefArch\"}},\"RefArchGlobal\":{\"contentFolderIDs\":[\"root\"],\"static\":{\"Site__c\":\"RefArchGlobal\"}}}"
+                            "default-value": "{\"_defaults\":{\"articleType\":\"Knowledge__kav\",\"recordTypeName\":\"SDO_Knowledge_FAQ\",\"fieldMapping\":{\"Title\":\"name\",\"Body__c\":\"custom.body\",\"SFCC_External_ID__c\":\"ID\",\"UrlName\":\"name\"},\"transforms\":{\"UrlName\":\"urlSafe:-\"},\"batchSize\":50,\"exportMode\":\"full\",\"publishArticles\":false,\"autoCreateFields\":true,\"fieldMetadata\":{\"Site__c\":{\"label\":\"Site\",\"type\":\"Text\",\"length\":80}},\"dataCategories\":{\"Categories\":\"All:Shop_Experience\"},\"validateDataCategories\":true},\"RefArch\":{\"contentFolderIDs\":[\"root\"],\"static\":{\"Site__c\":\"RefArch\"}},\"RefArchGlobal\":{\"contentFolderIDs\":[\"root\"],\"static\":{\"Site__c\":\"RefArchGlobal\"}}}"
                         }
                     ]
                 },

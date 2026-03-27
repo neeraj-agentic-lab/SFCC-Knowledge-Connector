@@ -14,6 +14,7 @@ var ContentSearchModel = require('dw/content/ContentSearchModel');
 var Site = require('dw/system/Site');
 var Logger = require('dw/system/Logger');
 var fieldTransformHelper = require('int_salesforce_knowledge/cartridge/scripts/helpers/fieldTransformHelper');
+var dataCategoryHelper = require('int_salesforce_knowledge/cartridge/scripts/helpers/salesforceDataCategoryHelper');
 
 // Initialize logger
 var logger = Logger.getLogger('SFKnowledge', 'ContentMapping');
@@ -532,10 +533,14 @@ function mapContentToArticle(contentAsset, articleType, fieldMapping, dataCatego
         // STEP 5: Add Language field only during creation (not during updates)
         // The Language field in Salesforce Knowledge is a system field that cannot be modified after creation
         if (isCreate !== false) {
-            article.Language = 'en_US'; // TODO: Make configurable or map from site locale
+            // Get language from config or content asset, default to en_US
+            var language = (config && config.language) || (contentAsset && contentAsset.language) || 'en_US';
+            article.Language = language;
+
             if (enableDebugLogging) {
                 logger.info('  - SF Field: "Language" (System Field)');
-                logger.info('    Value: en_US');
+                logger.info('    Value: ' + language);
+                logger.info('    Source: ' + (config && config.language ? 'config' : contentAsset && contentAsset.language ? 'contentAsset' : 'default'));
                 logger.info('    Included in payload: true (CREATE only)');
             }
         } else {
@@ -545,18 +550,30 @@ function mapContentToArticle(contentAsset, articleType, fieldMapping, dataCatego
             }
         }
 
-        // STEP 6: Add data category if provided
-        if (dataCategory && dataCategory.trim() !== '') {
-            // Note: Data categories in Salesforce require specific API structure
-            // This is a simplified example - actual implementation may need category group mapping
-            article.DataCategorySelections = {
-                DataCategory: dataCategory
-            };
-            if (enableDebugLogging) {
-                logger.info('  - SF Field: "DataCategorySelections"');
-                logger.info('    Value: ' + dataCategory);
-                logger.info('    Included in payload: true');
+        // STEP 6: Add data categories (content-level or site-level defaults)
+        var dataCategories = dataCategoryHelper.getDataCategories(contentAsset, config, enableDebugLogging);
+
+        if (dataCategories) {
+            var sfDataCategories = dataCategoryHelper.convertToSalesforceFormat(dataCategories);
+
+            if (sfDataCategories) {
+                // Merge DataCategorySelections into article
+                for (var dcKey in sfDataCategories) {
+                    if (sfDataCategories.hasOwnProperty(dcKey)) {
+                        article[dcKey] = sfDataCategories[dcKey];
+                    }
+                }
+
+                if (enableDebugLogging) {
+                    logger.info('  - SF Field: "DataCategorySelections"');
+                    logger.info('    Value: ' + JSON.stringify(sfDataCategories.DataCategorySelections));
+                    logger.info('    Included in payload: true');
+                }
             }
+        } else if (enableDebugLogging) {
+            logger.info('  - SF Field: "DataCategorySelections"');
+            logger.info('    Value: (not configured)');
+            logger.info('    Included in payload: false');
         }
 
         if (enableDebugLogging) {
@@ -711,7 +728,63 @@ function exportToExternalAPI(contentAssets, batchSize, exportFunction) {
 }
 
 /**
- * Update Sync Metadata on Content Asset
+ * Get Content Asset with All Available Languages
+ *
+ * Retrieves a content asset in all languages it exists in, using language discovery.
+ * Returns an array of formatted content assets, one for each language version.
+ *
+ * @param {String} contentAssetID - Content Asset ID
+ * @param {Array<String>} locales - Array of locale IDs to check
+ * @param {Boolean} enableDebugLogging - Enable debug logging
+ * @returns {Array<Object>} Array of formatted content assets (one per language)
+ *
+ * @example
+ * var contentVersions = getContentWithAllLanguages('faq-001', ['en_US', 'es', 'fr'], false);
+ * // Returns array with 2-3 formatted content objects, each with .language property
+ */
+function getContentWithAllLanguages(contentAssetID, locales, enableDebugLogging) {
+    var languageHelper = require('int_salesforce_knowledge/cartridge/scripts/helpers/languageHelper');
+    var contentAssets = [];
+
+    if (!contentAssetID || !locales || locales.length === 0) {
+        logger.warn('Invalid parameters for getContentWithAllLanguages');
+        return contentAssets;
+    }
+
+    logger.debug('Getting content ' + contentAssetID + ' in all available languages');
+
+    // Check which languages this content exists in
+    var availableLanguages = languageHelper.getAvailableLanguagesForContent(contentAssetID, locales);
+
+    if (availableLanguages.length === 0) {
+        logger.warn('Content ' + contentAssetID + ' not available in any target language');
+        return contentAssets;
+    }
+
+    if (enableDebugLogging) {
+        logger.info('Content ' + contentAssetID + ' available in ' + availableLanguages.length + ' languages: ' + availableLanguages.join(', '));
+    }
+
+    // Get content in each available language
+    for (var i = 0; i < availableLanguages.length; i++) {
+        var locale = availableLanguages[i];
+        var content = languageHelper.getContentAssetInLocale(contentAssetID, locale, enableDebugLogging);
+
+        if (content) {
+            contentAssets.push(content);
+            logger.debug('Retrieved content ' + contentAssetID + ' in language: ' + locale);
+        } else {
+            logger.warn('Failed to retrieve content ' + contentAssetID + ' in language: ' + locale);
+        }
+    }
+
+    logger.info('Retrieved content ' + contentAssetID + ' in ' + contentAssets.length + ' language versions');
+
+    return contentAssets;
+}
+
+/**
+ * Update Sync Metadata on Content Asset (Multi-Language Support)
  *
  * Updates the Salesforce Knowledge sync metadata fields on a B2C Content Asset
  * after successful export to Salesforce Knowledge.
@@ -720,22 +793,27 @@ function exportToExternalAPI(contentAssets, batchSize, exportFunction) {
  * - sfKnowledgeArticleId: Master Knowledge Article ID
  * - sfKnowledgeVersionId: Current version ID
  * - sfLastSyncDateTime: Current timestamp
+ * - sfLanguageVersions: JSON array of synced language codes
  *
  * @param {string} contentAssetID - B2C Content Asset ID
  * @param {string} knowledgeArticleId - Salesforce Knowledge Article ID (master ID)
  * @param {string} versionId - Salesforce Knowledge Version ID
+ * @param {string} language - Language code (e.g., 'en_US', 'es', 'fr') - optional, defaults to 'en_US'
  * @returns {Object} Update result
  * @returns {boolean} result.success - Whether update succeeded
  * @returns {string} result.error - Error message (if failed)
  *
  * @example
- * var result = updateSyncMetadata('faq-001', 'kA0xx000000001', 'ka0xx000000002');
+ * var result = updateSyncMetadata('faq-001', 'kA0xx000000001', 'ka0xx000000002', 'en_US');
  * if (result.success) {
  *     logger.info('Sync metadata updated for content: faq-001');
  * }
  */
-function updateSyncMetadata(contentAssetID, knowledgeArticleId, versionId) {
-    logger.debug('Updating sync metadata for content asset: ' + contentAssetID);
+function updateSyncMetadata(contentAssetID, knowledgeArticleId, versionId, language) {
+    // Default language to en_US if not provided
+    var lang = language || 'en_US';
+
+    logger.debug('Updating sync metadata for content asset: ' + contentAssetID + ', language: ' + lang);
 
     try {
         // Get content asset
@@ -753,14 +831,40 @@ function updateSyncMetadata(contentAssetID, knowledgeArticleId, versionId) {
         var Transaction = require('dw/system/Transaction');
 
         Transaction.wrap(function () {
-            // Update sync metadata
+            // Update standard sync metadata
             content.custom.sfKnowledgeArticleId = knowledgeArticleId;
             content.custom.sfKnowledgeVersionId = versionId;
             content.custom.sfLastSyncDateTime = new Date();
 
+            // Update language versions tracking (JSON array)
+            var languageVersions = [];
+            try {
+                if (content.custom.sfLanguageVersions) {
+                    languageVersions = JSON.parse(content.custom.sfLanguageVersions);
+                    if (!Array.isArray(languageVersions)) {
+                        logger.warn('sfLanguageVersions is not an array, resetting to empty array');
+                        languageVersions = [];
+                    }
+                }
+            } catch (parseError) {
+                logger.warn('Failed to parse existing language versions, resetting: ' + parseError.message);
+                languageVersions = [];
+            }
+
+            // Add this language if not already tracked
+            if (languageVersions.indexOf(lang) === -1) {
+                languageVersions.push(lang);
+                logger.debug('Added language ' + lang + ' to sfLanguageVersions');
+            }
+
+            // Store updated language versions as JSON string
+            content.custom.sfLanguageVersions = JSON.stringify(languageVersions);
+
             logger.debug('Updated sync metadata for ' + contentAssetID + ': ' +
                 'articleId=' + knowledgeArticleId + ', ' +
                 'versionId=' + versionId + ', ' +
+                'language=' + lang + ', ' +
+                'allLanguages=' + languageVersions.join(',') + ', ' +
                 'syncTime=' + content.custom.sfLastSyncDateTime.toISOString());
         });
 
@@ -785,5 +889,6 @@ module.exports = {
     mapContentToArticle: mapContentToArticle,
     getNestedProperty: getNestedProperty,
     exportToExternalAPI: exportToExternalAPI,
+    getContentWithAllLanguages: getContentWithAllLanguages,
     updateSyncMetadata: updateSyncMetadata
 };

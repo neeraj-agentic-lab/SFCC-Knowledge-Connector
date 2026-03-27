@@ -44,6 +44,15 @@
                 <mandatory-flag>false</mandatory-flag>
                 <externally-managed-flag>false</externally-managed-flag>
             </attribute-definition>
+
+            <!-- Language Versions (Multi-Language Support) -->
+            <attribute-definition attribute-id="sfLanguageVersions">
+                <display-name xml:lang="x-default">SF Language Versions</display-name>
+                <description xml:lang="x-default">JSON array of language codes synced to Salesforce Knowledge (e.g., ["en_US", "es", "fr"])</description>
+                <type>text</type>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+            </attribute-definition>
         </custom-attribute-definitions>
 
         <group-definitions>
@@ -52,6 +61,7 @@
                 <attribute attribute-id="sfKnowledgeArticleId"/>
                 <attribute attribute-id="sfKnowledgeVersionId"/>
                 <attribute attribute-id="sfLastSyncDateTime"/>
+                <attribute attribute-id="sfLanguageVersions"/>
             </attribute-group>
         </group-definitions>
     </type-extension>
