@@ -265,7 +265,7 @@ function findArticleByExternalId(accessToken, instanceUrl, externalId, articleTy
 
             if (draftRecords && draftRecords.length > 0) {
                 var draftArticle = draftRecords[0];
-                logger.info('[' + externalId + '] Found existing DRAFT article: Id=' + draftArticle.Id + ', KnowledgeArticleId=' + draftArticle.KnowledgeArticleId + ', Language=' + lang + ', PublishStatus=' + draftArticle.PublishStatus);
+                logger.debug('[' + externalId + '] Found existing DRAFT article: Id=' + draftArticle.Id + ', KnowledgeArticleId=' + draftArticle.KnowledgeArticleId + ', Language=' + lang + ', PublishStatus=' + draftArticle.PublishStatus);
                 return draftArticle;
             }
         }
@@ -295,7 +295,7 @@ function findArticleByExternalId(accessToken, instanceUrl, externalId, articleTy
 
             if (onlineRecords && onlineRecords.length > 0) {
                 var onlineArticle = onlineRecords[0];
-                logger.info('Found existing ONLINE article: Id=' + onlineArticle.Id + ', KnowledgeArticleId=' + onlineArticle.KnowledgeArticleId + ', Language=' + lang + ', PublishStatus=' + onlineArticle.PublishStatus);
+                logger.debug('Found existing ONLINE article: Id=' + onlineArticle.Id + ', KnowledgeArticleId=' + onlineArticle.KnowledgeArticleId + ', Language=' + lang + ', PublishStatus=' + onlineArticle.PublishStatus);
                 return onlineArticle;
             }
         }
@@ -366,7 +366,7 @@ function updateArticleWithVersioning(accessToken, instanceUrl, existingArticle, 
 
         if (existingArticle.PublishStatus === 'Online') {
             // Article is published, must create draft first using editOnlineArticle
-            logger.info('Article is Online, creating draft via editOnlineArticle');
+            logger.debug('Article is Online, creating draft via editOnlineArticle');
 
             var editResult = editOnlineArticle(accessToken, instanceUrl, existingArticle.KnowledgeArticleId, serviceID);
 
@@ -380,11 +380,11 @@ function updateArticleWithVersioning(accessToken, instanceUrl, existingArticle, 
             }
 
             draftId = editResult.draftId;
-            logger.info('Created draft version: ' + draftId);
+            logger.debug('Created draft version: ' + draftId);
 
         } else if (existingArticle.PublishStatus === 'Draft') {
             // Draft already exists, use it
-            logger.info(logPrefix + 'Draft version already exists: ' + existingArticle.Id);
+            logger.debug(logPrefix + 'Draft version already exists: ' + existingArticle.Id);
             draftId = existingArticle.Id;
 
         } else {
@@ -412,9 +412,9 @@ function updateArticleWithVersioning(accessToken, instanceUrl, existingArticle, 
         }
 
         if (enableDebugLogging) {
-            logger.info('========== DEBUG: SALESFORCE API REQUEST (UPDATE) ==========');
-            logger.info('Endpoint: ' + instanceUrl + '/services/data/' + API_VERSION + endpoint);
-            logger.info('Method: PATCH');
+            logger.debug('========== DEBUG: SALESFORCE API REQUEST (UPDATE) ==========');
+            logger.debug('Endpoint: ' + instanceUrl + '/services/data/' + API_VERSION + endpoint);
+            logger.debug('Method: PATCH');
 
             var excludedFields = [];
             if (articleData.DataCategorySelections) excludedFields.push('DataCategorySelections');
@@ -422,16 +422,16 @@ function updateArticleWithVersioning(accessToken, instanceUrl, existingArticle, 
             if (articleData.attributes) excludedFields.push('attributes');
 
             if (excludedFields.length > 0) {
-                logger.info('Note: Excluded immutable fields from update: ' + excludedFields.join(', '));
+                logger.debug('Note: Excluded immutable fields from update: ' + excludedFields.join(', '));
             }
-            logger.info('Payload:');
+            logger.debug('Payload:');
             try {
-                logger.info(JSON.stringify(updatePayload, null, 2));
+                logger.debug(JSON.stringify(updatePayload, null, 2));
             } catch (e) {
                 logger.warn('Could not stringify payload: ' + e.message);
-                logger.info('Payload fields: ' + Object.keys(updatePayload).join(', '));
+                logger.debug('Payload fields: ' + Object.keys(updatePayload).join(', '));
             }
-            logger.info('===========================================================');
+            logger.debug('===========================================================');
         }
 
         var service = services.getKnowledgeService(serviceID);
@@ -444,20 +444,20 @@ function updateArticleWithVersioning(accessToken, instanceUrl, existingArticle, 
         });
 
         if (enableDebugLogging) {
-            logger.info('========== DEBUG: SALESFORCE API RESPONSE (UPDATE) ==========');
-            logger.info('HTTP Status: ' + updateResult.status);
-            logger.info('Response Object:');
+            logger.debug('========== DEBUG: SALESFORCE API RESPONSE (UPDATE) ==========');
+            logger.debug('HTTP Status: ' + updateResult.status);
+            logger.debug('Response Object:');
             try {
-                logger.info(JSON.stringify(updateResult.object, null, 2));
+                logger.debug(JSON.stringify(updateResult.object, null, 2));
             } catch (e) {
                 logger.warn('Could not stringify response object: ' + e.message);
                 if (updateResult.object) {
-                    logger.info('Response success: ' + updateResult.object.success);
-                    logger.info('Response data: ' + (updateResult.object.data ? JSON.stringify(updateResult.object.data) : 'null'));
-                    logger.info('Response error: ' + (updateResult.object.errorMessage || 'none'));
+                    logger.debug('Response success: ' + updateResult.object.success);
+                    logger.debug('Response data: ' + (updateResult.object.data ? JSON.stringify(updateResult.object.data) : 'null'));
+                    logger.debug('Response error: ' + (updateResult.object.errorMessage || 'none'));
                 }
             }
-            logger.info('===========================================================');
+            logger.debug('===========================================================');
         }
 
         if (updateResult.status !== 'OK' || !updateResult.object || !updateResult.object.success) {
@@ -474,7 +474,7 @@ function updateArticleWithVersioning(accessToken, instanceUrl, existingArticle, 
 
         // STEP 2: Assign/update data categories if configured
         if (articleData.DataCategorySelections) {
-            logger.info(logPrefix + 'Assigning data categories to article');
+            logger.debug(logPrefix + 'Assigning data categories to article');
 
             var categoryResult = assignDataCategories(
                 accessToken,
@@ -489,7 +489,7 @@ function updateArticleWithVersioning(accessToken, instanceUrl, existingArticle, 
                 logger.warn(logPrefix + 'Data category assignment failed: ' + categoryResult.error);
                 // Don't fail the whole update - article is still updated, just categories failed
             } else {
-                logger.info(logPrefix + 'Data categories assigned successfully');
+                logger.debug(logPrefix + 'Data categories assigned successfully');
             }
         }
 
@@ -564,17 +564,17 @@ function createArticle(accessToken, instanceUrl, articleData, articleType, enabl
         var endpoint = '/sobjects/' + articleType;
 
         if (enableDebugLogging) {
-            logger.info('========== DEBUG: SALESFORCE API REQUEST (CREATE) ==========');
-            logger.info('Endpoint: ' + instanceUrl + '/services/data/' + API_VERSION + endpoint);
-            logger.info('Method: POST');
-            logger.info('Payload:');
+            logger.debug('========== DEBUG: SALESFORCE API REQUEST (CREATE) ==========');
+            logger.debug('Endpoint: ' + instanceUrl + '/services/data/' + API_VERSION + endpoint);
+            logger.debug('Method: POST');
+            logger.debug('Payload:');
             try {
-                logger.info(JSON.stringify(articleData, null, 2));
+                logger.debug(JSON.stringify(articleData, null, 2));
             } catch (e) {
                 logger.warn('Could not stringify payload: ' + e.message);
-                logger.info('Payload fields: ' + Object.keys(articleData).join(', '));
+                logger.debug('Payload fields: ' + Object.keys(articleData).join(', '));
             }
-            logger.info('===========================================================');
+            logger.debug('===========================================================');
         }
 
         var service = services.getKnowledgeService(serviceID);
@@ -587,20 +587,20 @@ function createArticle(accessToken, instanceUrl, articleData, articleType, enabl
         });
 
         if (enableDebugLogging) {
-            logger.info('========== DEBUG: SALESFORCE API RESPONSE (CREATE) ==========');
-            logger.info('HTTP Status: ' + result.status);
-            logger.info('Response Object:');
+            logger.debug('========== DEBUG: SALESFORCE API RESPONSE (CREATE) ==========');
+            logger.debug('HTTP Status: ' + result.status);
+            logger.debug('Response Object:');
             try {
-                logger.info(JSON.stringify(result.object, null, 2));
+                logger.debug(JSON.stringify(result.object, null, 2));
             } catch (e) {
                 logger.warn('Could not stringify response object: ' + e.message);
                 if (result.object) {
-                    logger.info('Response success: ' + result.object.success);
-                    logger.info('Response data: ' + (result.object.data ? JSON.stringify(result.object.data) : 'null'));
-                    logger.info('Response error: ' + (result.object.errorMessage || 'none'));
+                    logger.debug('Response success: ' + result.object.success);
+                    logger.debug('Response data: ' + (result.object.data ? JSON.stringify(result.object.data) : 'null'));
+                    logger.debug('Response error: ' + (result.object.errorMessage || 'none'));
                 }
             }
-            logger.info('===========================================================');
+            logger.debug('===========================================================');
         }
 
         // Process result
@@ -612,7 +612,7 @@ function createArticle(accessToken, instanceUrl, articleData, articleType, enabl
             var query = "SELECT Id, KnowledgeArticleId FROM " + articleType + " WHERE Id = '" + articleId + "'";
             var queryEndpoint = '/query?q=' + encodeURIComponent(query);
 
-            logger.info('Querying for KnowledgeArticleId with query: ' + query);
+            logger.debug('Querying for KnowledgeArticleId with query: ' + query);
 
             var queryResult = service.call({
                 accessToken: accessToken,
@@ -622,11 +622,11 @@ function createArticle(accessToken, instanceUrl, articleData, articleType, enabl
                 body: {}
             });
 
-            logger.info('Query result status: ' + queryResult.status);
+            logger.debug('Query result status: ' + queryResult.status);
             if (queryResult.object) {
-                logger.info('Query result success: ' + queryResult.object.success);
+                logger.debug('Query result success: ' + queryResult.object.success);
                 if (queryResult.object.data) {
-                    logger.info('Query result data: ' + JSON.stringify(queryResult.object.data));
+                    logger.debug('Query result data: ' + JSON.stringify(queryResult.object.data));
                 } else {
                     logger.warn('Query result has no data property');
                 }
@@ -638,12 +638,12 @@ function createArticle(accessToken, instanceUrl, articleData, articleType, enabl
             if (queryResult.status === 'OK' && queryResult.object && queryResult.object.success) {
                 var records = queryResult.object.data.records;
                 if (records && records.length > 0) {
-                    logger.info('Query returned ' + records.length + ' record(s)');
-                    logger.info('Record[0].Id: ' + records[0].Id);
-                    logger.info('Record[0].KnowledgeArticleId: ' + records[0].KnowledgeArticleId);
+                    logger.debug('Query returned ' + records.length + ' record(s)');
+                    logger.debug('Record[0].Id: ' + records[0].Id);
+                    logger.debug('Record[0].KnowledgeArticleId: ' + records[0].KnowledgeArticleId);
 
                     knowledgeArticleId = records[0].KnowledgeArticleId;
-                    logger.info('Using KnowledgeArticleId: ' + knowledgeArticleId + ' from query result');
+                    logger.debug('Using KnowledgeArticleId: ' + knowledgeArticleId + ' from query result');
                 } else {
                     logger.warn('Query returned no records, using fallback articleId: ' + knowledgeArticleId);
                 }
@@ -1058,7 +1058,7 @@ function assignDataCategories(accessToken, instanceUrl, articleVersionId, dataCa
                     categoryName: record.DataCategoryName
                 };
             }
-            logger.info(logPrefix + '  Found ' + records.length + ' existing category assignment(s)');
+            logger.debug(logPrefix + '  Found ' + records.length + ' existing category assignment(s)');
         }
 
         // Step 2: Build records to create/update
@@ -1083,17 +1083,17 @@ function assignDataCategories(accessToken, instanceUrl, articleVersionId, dataCa
                     if (existing) {
                         // Check if category changed
                         if (existing.categoryName !== leafCategoryName) {
-                            logger.info(logPrefix + '  - Updating category group "' + groupName + '": ' + existing.categoryName + ' → ' + leafCategoryName);
+                            logger.debug(logPrefix + '  - Updating category group "' + groupName + '": ' + existing.categoryName + ' → ' + leafCategoryName);
                             recordsToUpdate.push({
                                 id: existing.id,
                                 body: { DataCategoryName: leafCategoryName }
                             });
                         } else {
-                            logger.info(logPrefix + '  - Category group "' + groupName + '" already assigned: ' + leafCategoryName);
+                            logger.debug(logPrefix + '  - Category group "' + groupName + '" already assigned: ' + leafCategoryName);
                         }
                     } else {
                         // New assignment needed
-                        logger.info(logPrefix + '  - Assigning new category group "' + groupName + '": ' + leafCategoryName);
+                        logger.debug(logPrefix + '  - Assigning new category group "' + groupName + '": ' + leafCategoryName);
                         recordsToCreate.push({
                             ParentId: articleVersionId,
                             DataCategoryGroupName: groupName,
@@ -1106,7 +1106,7 @@ function assignDataCategories(accessToken, instanceUrl, articleVersionId, dataCa
 
         // Step 3: Create new assignments using Composite API (batch)
         if (recordsToCreate.length > 0) {
-            logger.info(logPrefix + '  Creating ' + recordsToCreate.length + ' category assignment(s)');
+            logger.debug(logPrefix + '  Creating ' + recordsToCreate.length + ' category assignment(s)');
 
             var createEndpoint = '/composite/sobjects';
             var createResult = service.call({
@@ -1141,7 +1141,7 @@ function assignDataCategories(accessToken, instanceUrl, articleVersionId, dataCa
                     }
                 }
 
-                logger.info(logPrefix + '    ✓ Created ' + successCount + ' assignment(s)' + (errorCount > 0 ? ', ' + errorCount + ' failed' : ''));
+                logger.debug(logPrefix + '    ✓ Created ' + successCount + ' assignment(s)' + (errorCount > 0 ? ', ' + errorCount + ' failed' : ''));
             } else {
                 var createError = createResult.object ? createResult.object.errorMessage : 'Create failed';
                 logger.warn(logPrefix + '    ✗ Failed to create assignments: ' + createError);
@@ -1150,7 +1150,7 @@ function assignDataCategories(accessToken, instanceUrl, articleVersionId, dataCa
 
         // Step 4: Update existing assignments (individual PATCH calls)
         if (recordsToUpdate.length > 0) {
-            logger.info(logPrefix + '  Updating ' + recordsToUpdate.length + ' category assignment(s)');
+            logger.debug(logPrefix + '  Updating ' + recordsToUpdate.length + ' category assignment(s)');
 
             for (var m = 0; m < recordsToUpdate.length; m++) {
                 var updateRec = recordsToUpdate[m];
@@ -1165,7 +1165,7 @@ function assignDataCategories(accessToken, instanceUrl, articleVersionId, dataCa
                 });
 
                 if (updateResult.status === 'OK' && updateResult.object && updateResult.object.success) {
-                    logger.info(logPrefix + '    ✓ Updated assignment ' + updateRec.id);
+                    logger.debug(logPrefix + '    ✓ Updated assignment ' + updateRec.id);
                 } else {
                     var updateError = updateResult.object ? updateResult.object.errorMessage : 'Update failed';
                     logger.warn(logPrefix + '    ✗ Failed to update assignment: ' + updateError);
@@ -1174,7 +1174,22 @@ function assignDataCategories(accessToken, instanceUrl, articleVersionId, dataCa
         }
 
         if (recordsToCreate.length === 0 && recordsToUpdate.length === 0) {
-            logger.info(logPrefix + '  All category assignments up to date');
+            logger.debug(logPrefix + '  All category assignments up to date');
+        }
+
+        // Log summary of assigned categories (INFO level for visibility)
+        var categorySummary = [];
+        for (var groupName in selections) {
+            if (selections.hasOwnProperty(groupName)) {
+                var categories = selections[groupName];
+                for (var n = 0; n < categories.length; n++) {
+                    var categoryPath = categories[n].dataCategoryName;
+                    categorySummary.push(groupName + ':' + categoryPath);
+                }
+            }
+        }
+        if (categorySummary.length > 0) {
+            logger.info(logPrefix + 'Article assigned to categories: ' + categorySummary.join(', '));
         }
 
         return {

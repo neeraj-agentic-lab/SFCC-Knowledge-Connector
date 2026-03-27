@@ -98,7 +98,7 @@ function getDataCategories(contentAsset, config, enableDebugLogging) {
         var contentCategories = parseDataCategoryValue(contentValue, config);
         if (contentCategories) {
             if (enableDebugLogging) {
-                logger.info('Using content-level data categories: ' + JSON.stringify(contentCategories));
+                logger.debug('Using content-level data categories: ' + JSON.stringify(contentCategories));
             }
             return contentCategories;
         }
@@ -107,7 +107,7 @@ function getDataCategories(contentAsset, config, enableDebugLogging) {
     // Step 2: Fall back to site-level defaults
     if (config && config.dataCategories) {
         if (enableDebugLogging) {
-            logger.info('No content-level categories, using site defaults: ' + JSON.stringify(config.dataCategories));
+            logger.debug('No content-level categories, using site defaults: ' + JSON.stringify(config.dataCategories));
         }
         return config.dataCategories;
     }
@@ -291,7 +291,7 @@ function validateDataCategories(accessToken, instanceUrl, allCategories, service
         if (allCategories.hasOwnProperty(groupName)) {
             var categories = allCategories[groupName];
 
-            logger.info('Validating data category group: ' + groupName + ' (' + categories.length + ' categories)');
+            logger.debug('Validating data category group: ' + groupName + ' (' + categories.length + ' categories)');
 
             var groupResult = validateDataCategoryGroup(accessToken, instanceUrl, groupName, categories, serviceID, articleType);
 
@@ -305,7 +305,15 @@ function validateDataCategories(accessToken, instanceUrl, allCategories, service
     }
 
     if (result.valid) {
-        logger.info('All data categories validated successfully');
+        // Build summary of validated categories
+        var validationSummary = [];
+        for (var groupName in allCategories) {
+            if (allCategories.hasOwnProperty(groupName)) {
+                var categories = allCategories[groupName];
+                validationSummary.push(groupName + ' (' + categories.length + ' categories)');
+            }
+        }
+        logger.info('All data categories validated successfully: ' + validationSummary.join(', '));
     } else {
         logger.error('Data category validation failed with ' + result.errors.length + ' error(s)');
     }
@@ -349,7 +357,7 @@ function validateDataCategoryGroup(accessToken, instanceUrl, groupName, categori
             return result;
         }
 
-        logger.info('  ✓ Category group "' + groupName + '" exists');
+        logger.debug('  ✓ Category group "' + groupName + '" exists');
 
         // Step 2: Validate each category in the group using the specific category API
         var validCategoriesResult = fetchCategoriesInGroup(accessToken, instanceUrl, groupName, categories, serviceID, articleType);
@@ -361,7 +369,7 @@ function validateDataCategoryGroup(accessToken, instanceUrl, groupName, categori
         }
 
         result.validCategories = validCategoriesResult.categories;
-        logger.info('  ✓ All categories validated successfully');
+        logger.debug('  ✓ All categories validated successfully');
 
     } catch (e) {
         result.valid = false;
@@ -490,7 +498,7 @@ function checkCategoryGroupExists(accessToken, instanceUrl, groupName, serviceID
  * @returns {string} result.error - Error message (if invalid)
  */
 function validateSpecificCategory(accessToken, instanceUrl, groupName, categoryPath, serviceID, articleType) {
-    logger.info('  - Validating category: "' + categoryPath + '"');
+    logger.debug('  - Validating category: "' + categoryPath + '"');
 
     try {
         var services = require('int_salesforce_knowledge/cartridge/scripts/services/salesforceKnowledgeService');
@@ -502,13 +510,13 @@ function validateSpecificCategory(accessToken, instanceUrl, groupName, categoryP
         var pathSegments = categoryPath.split(':');
         var leafCategory = pathSegments[pathSegments.length - 1].trim();
 
-        logger.info('    → Leaf category to validate: "' + leafCategory + '"');
+        logger.debug('    → Leaf category to validate: "' + leafCategory + '"');
 
         // Query the leaf category directly
         // Format: /support/dataCategoryGroups/{groupName}/dataCategories/{categoryName}?sObjectName=KnowledgeArticleVersion
         var endpoint = '/support/dataCategoryGroups/' + groupName + '/dataCategories/' + encodeURIComponent(leafCategory) + '?sObjectName=KnowledgeArticleVersion';
 
-        logger.info('    → API endpoint: ' + endpoint);
+        logger.debug('    → API endpoint: ' + endpoint);
 
         var result = service.call({
             accessToken: accessToken,
@@ -517,15 +525,15 @@ function validateSpecificCategory(accessToken, instanceUrl, groupName, categoryP
             method: 'GET'
         });
 
-        logger.info('    → Response status: ' + result.status);
+        logger.debug('    → Response status: ' + result.status);
 
         if (result.status === 'OK' && result.object && result.object.success) {
             var data = result.object.data;
-            logger.info('    ✓ Category "' + leafCategory + '" exists');
+            logger.debug('    ✓ Category "' + leafCategory + '" exists');
 
             // Optionally validate the full hierarchy if parent categories are specified
             if (pathSegments.length > 1) {
-                logger.info('    → Full path "' + categoryPath + '" will be used for assignment');
+                logger.debug('    → Full path "' + categoryPath + '" will be used for assignment');
                 // Note: We're only validating that the leaf category exists
                 // Salesforce will validate the full hierarchy during article creation
             }
@@ -575,7 +583,7 @@ function validateSpecificCategory(accessToken, instanceUrl, groupName, categoryP
  * @returns {string} result.error - Error message (if failed)
  */
 function fetchCategoriesInGroup(accessToken, instanceUrl, groupName, categories, serviceID, articleType) {
-    logger.info('Validating individual categories in group: ' + groupName);
+    logger.debug('Validating individual categories in group: ' + groupName);
 
     var validCategories = [];
     var errors = [];
